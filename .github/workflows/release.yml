@@ -6,6 +6,9 @@ on:
     - cron: '0 2 * * 6'
   workflow_dispatch: # Allow manual triggering of the workflow
 
+permissions:
+  contents: write  # add this line
+
 jobs:
   check-and-release:
     runs-on: ubuntu-latest
@@ -20,7 +23,6 @@ jobs:
         run: |
           if [ -z "$(git diff --name-only ${{ env.latest_tag }})" ]; then
             echo "No changes detected since last release"
-            exit 1
           fi
 
       - name: Check for Blocking Issues/PRs
@@ -69,4 +71,4 @@ jobs:
           git tag ${{ env.new_tag }}
           git push origin ${{ env.new_tag }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
