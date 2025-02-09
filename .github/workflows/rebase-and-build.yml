@@ -1,0 +1,46 @@
+name: Auto Rebase & Build
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  # Runs daily at midnight UTC
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  rebase_and_build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout your fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Ensures full history for rebase
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add upstream repository
+        run: |
+          git remote add upstream https://github.com/jesseduffield/lazygit.git
+          git fetch upstream
+
+      - name: Rebase with upstream changes
+        run: |
+          git checkout master  # Switch to your main branch
+          git rebase upstream/master  # Rebase on latest upstream
+          git push origin master --force  # Push the rebased branch
+
+      - name: Set up Go environment
+        uses: actions/setup-go@v4
+        with:
+          go-version: stable
+
+      - name: Build lazygit binaries
+        run: |
+          go version
+          go build -o lazygit  # Builds the binary
+          mkdir -p artifacts
+          mv lazygit artifacts/lazygit
+
+      - name: Upload built binary
+        uses: actions/upload-artifact@v3
+        with:
+          name: lazygit-binary
+          path: artifacts/lazygit
