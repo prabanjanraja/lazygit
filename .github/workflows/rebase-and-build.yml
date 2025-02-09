@@ -43,9 +43,9 @@ jobs:
         uses: actions/upload-artifact@v4.6.0
         with:
           # Artifact name
-          name: # optional, default is artifact
+          name: lazygit-binary# optional, default is artifact
           # A file, directory or wildcard pattern that describes what to upload
-          path: 
+          path: artifacts/lazygit
           # The desired behavior if no files are found using the provided path.
       Available Options:
         warn: Output a warning but do not fail the action
