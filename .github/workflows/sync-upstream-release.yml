@@ -1,0 +1,57 @@
+name: Sync Upstream Release
+
+on:
+  repository_dispatch:
+    types: [upstream_release, formula_update]
+  workflow_dispatch: # Allow manual triggering
+  watch:
+    types: [started]
+
+jobs:
+  sync-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get latest upstream release
+        id: upstream_release
+        run: |
+          # Get the latest release from the original lazygit repository
+          LATEST_RELEASE=$(curl -s https://api.github.com/repos/jesseduffield/lazygit/releases/latest)
+          TAG_NAME=$(echo "$LATEST_RELEASE" | jq -r .tag_name)
+          BODY=$(echo "$LATEST_RELEASE" | jq -r .body)
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "release_body<<EOF" >> $GITHUB_OUTPUT
+          echo "$BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Check if release exists in fork
+        id: check_release
+        run: |
+          if git rev-parse "${{ steps.upstream_release.outputs.tag_name }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Sync release
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Create and push tag
+          git tag ${{ steps.upstream_release.outputs.tag_name }}
+          git push origin ${{ steps.upstream_release.outputs.tag_name }}
+          
+          # Create release
+          gh release create ${{ steps.upstream_release.outputs.tag_name }} \
+            --title "${{ steps.upstream_release.outputs.tag_name }}" \
+            --notes "${{ steps.upstream_release.outputs.release_body }}" \
+            --repo ${{ github.repository }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

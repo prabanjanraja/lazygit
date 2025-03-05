@@ -1,0 +1,66 @@
+name: Watch Upstream Changes
+
+on:
+  schedule:
+    # Run at 00:00 every Monday
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Latest Release
+        id: check_release
+        run: |
+          # Store current release version
+          CURRENT_RELEASE=$(curl -s https://api.github.com/repos/jesseduffield/lazygit/releases/latest | jq -r .tag_name)
+          echo "current_release=$CURRENT_RELEASE" >> $GITHUB_OUTPUT
+          
+          # Check if we have a stored previous version
+          PREV_RELEASE=$(cat .github/previous_release.txt 2>/dev/null || echo "none")
+          
+          if [ "$CURRENT_RELEASE" != "$PREV_RELEASE" ]; then
+            echo "New release detected: $CURRENT_RELEASE"
+            echo "$CURRENT_RELEASE" > .github/previous_release.txt
+            echo "new_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "No new release"
+            echo "new_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check Formula Update
+        id: check_formula
+        run: |
+          # Get the latest commit hash of the formula
+          CURRENT_HASH=$(curl -s https://api.github.com/repos/Homebrew/homebrew-core/contents/Formula/l/lazygit.rb | jq -r .sha)
+          
+          # Check if we have a stored previous hash
+          PREV_HASH=$(cat .github/previous_formula_hash.txt 2>/dev/null || echo "none")
+          
+          if [ "$CURRENT_HASH" != "$PREV_HASH" ]; then
+            echo "Formula update detected"
+            echo "$CURRENT_HASH" > .github/previous_formula_hash.txt
+            echo "formula_updated=true" >> $GITHUB_OUTPUT
+          else
+            echo "No formula update"
+            echo "formula_updated=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger Sync Workflow - New Release
+        if: steps.check_release.outputs.new_release == 'true'
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/dispatches \
+            -d '{"event_type":"upstream_release"}'
+
+      - name: Trigger Sync Workflow - Formula Update
+        if: steps.check_formula.outputs.formula_updated == 'true'
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/dispatches \
+            -d '{"event_type":"formula_update"}' 
