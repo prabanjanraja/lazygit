@@ -1,8 +1,6 @@
 package controllers
 
 import (
-	"fmt"
-
 	"github.com/jesseduffield/lazygit/pkg/gui/context"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
 )
@@ -38,31 +36,19 @@ func (self *ConfirmationController) GetKeybindings(opts types.KeybindingsOpts) [
 			DisplayOnScreen: true,
 		},
 		{
-			Key: opts.GetKey(opts.Config.Universal.TogglePanel),
-			Handler: func() error {
-				if len(self.c.Contexts().Suggestions.State.Suggestions) > 0 {
-					subtitle := ""
-					if self.c.State().GetRepoState().GetCurrentPopupOpts().HandleDeleteSuggestion != nil {
-						// We assume that whenever things are deletable, they
-						// are also editable, so we show both keybindings
-						subtitle = fmt.Sprintf(self.c.Tr.SuggestionsSubtitle,
-							self.c.UserConfig.Keybinding.Universal.Remove, self.c.UserConfig.Keybinding.Universal.Edit)
-					}
-					self.c.Views().Suggestions.Subtitle = subtitle
-					return self.c.ReplaceContext(self.c.Contexts().Suggestions)
-				}
-				return nil
-			},
+			Key:             opts.GetKey(opts.Config.Universal.CopyToClipboard),
+			Handler:         self.handleCopyToClipboard,
+			Description:     self.c.Tr.CopyToClipboardMenu,
+			DisplayOnScreen: true,
 		},
 	}
 
 	return bindings
 }
 
-func (self *ConfirmationController) GetOnFocusLost() func(types.OnFocusLostOpts) error {
-	return func(types.OnFocusLostOpts) error {
-		self.c.Helpers().Confirmation.DeactivateConfirmationPrompt()
-		return nil
+func (self *ConfirmationController) GetOnFocusLost() func(types.OnFocusLostOpts) {
+	return func(types.OnFocusLostOpts) {
+		self.c.Helpers().Confirmation.DeactivateConfirmation()
 	}
 }
 
@@ -72,4 +58,15 @@ func (self *ConfirmationController) Context() types.Context {
 
 func (self *ConfirmationController) context() *context.ConfirmationContext {
 	return self.c.Contexts().Confirmation
+}
+
+func (self *ConfirmationController) handleCopyToClipboard() error {
+	confirmationView := self.c.Views().Confirmation
+	text := confirmationView.Buffer()
+	if err := self.c.OS().CopyToClipboard(text); err != nil {
+		return err
+	}
+
+	self.c.Toast(self.c.Tr.MessageCopiedToClipboard)
+	return nil
 }

@@ -14,6 +14,7 @@ import (
 // (sticky range, press 'v') -> no range
 // (sticky range, press 'escape') -> no range
 // (sticky range, press arrow) -> sticky range
+// (sticky range, press `<`/`>` or `,`/`.`) -> sticky range
 // (sticky range, press shift+arrow) -> nonsticky range
 // (nonsticky range, press 'v') -> no range
 // (nonsticky range, press 'escape') -> no range
@@ -30,7 +31,9 @@ var RangeSelect = NewIntegrationTest(NewIntegrationTestArgs{
 	Description:  "Verify range select works as expected in list views and in patch explorer views",
 	ExtraCmdArgs: []string{},
 	Skip:         false,
-	SetupConfig:  func(config *config.AppConfig) {},
+	SetupConfig: func(config *config.AppConfig) {
+		config.GetUserConfig().Gui.UseHunkModeInStagingView = false
+	},
 	SetupRepo: func(shell *Shell) {
 		// We're testing the commits view as our representative list context,
 		// as well as the staging view, and we're using the exact same code to test
@@ -38,7 +41,7 @@ var RangeSelect = NewIntegrationTest(NewIntegrationTestArgs{
 		// separately)
 		// In both views we're going to have 10 lines starting from 'line 1' going down to
 		// 'line 10'.
-		fileContent := ""
+		fileContent := "staged\n"
 		total := 10
 		for i := 1; i <= total; i++ {
 			remaining := total - i + 1
@@ -46,10 +49,11 @@ var RangeSelect = NewIntegrationTest(NewIntegrationTestArgs{
 			shell.EmptyCommit(fmt.Sprintf("line %d", remaining))
 			fileContent = fmt.Sprintf("%sline %d\n", fileContent, i)
 		}
-		shell.CreateFile("file1", fileContent)
+		shell.CreateFileAndAdd("file1", "staged\n")
+		shell.UpdateFile("file1", fileContent)
 	},
 	Run: func(t *TestDriver, keys config.KeybindingConfig) {
-		assertRangeSelectBehaviour := func(v *ViewDriver) {
+		assertRangeSelectBehaviour := func(v *ViewDriver, focusOtherView func(), lineIdxOfFirstItem int) {
 			v.
 				SelectedLines(
 					Contains("line 1"),
@@ -138,23 +142,34 @@ var RangeSelect = NewIntegrationTest(NewIntegrationTestArgs{
 				SelectedLines(
 					Contains("line 8"),
 				).
+				// (sticky range, press '>') -> sticky range
 				Press(keys.Universal.ToggleRangeSelect).
-				SelectedLines(
-					Contains("line 8"),
-				).
-				SelectNextItem().
+				Press(keys.Universal.GotoBottom).
 				SelectedLines(
 					Contains("line 8"),
 					Contains("line 9"),
+					Contains("line 10"),
 				).
 				// (sticky range, press 'escape') -> no range
 				PressEscape().
 				SelectedLines(
-					Contains("line 9"),
+					Contains("line 10"),
+				)
+
+			// Click in view, press shift+arrow -> nonsticky range
+			focusOtherView()
+			v.Click(1, lineIdxOfFirstItem).
+				SelectedLines(
+					Contains("line 1"),
+				).
+				Press(keys.Universal.RangeSelectDown).
+				SelectedLines(
+					Contains("line 1"),
+					Contains("line 2"),
 				)
 		}
 
-		assertRangeSelectBehaviour(t.Views().Commits().Focus())
+		assertRangeSelectBehaviour(t.Views().Commits().Focus(), func() { t.Views().Branches().Focus() }, 0)
 
 		t.Views().Files().
 			Focus().
@@ -163,6 +178,6 @@ var RangeSelect = NewIntegrationTest(NewIntegrationTestArgs{
 			).
 			PressEnter()
 
-		assertRangeSelectBehaviour(t.Views().Staging().IsFocused())
+		assertRangeSelectBehaviour(t.Views().Staging().IsFocused(), func() { t.Views().Staging().PressTab() }, 6)
 	},
 })

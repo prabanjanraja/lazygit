@@ -10,7 +10,7 @@ var usersFileContent = `package main
 import "fmt"
 
 func main() {
-	// TODO: verify that this actuall works
+	// TODO: verify that this actually works
 	fmt.Println("hello world")
 }
 `
@@ -22,6 +22,7 @@ var CustomPatch = NewIntegrationTest(NewIntegrationTestArgs{
 	IsDemo:       true,
 	SetupConfig: func(cfg *config.AppConfig) {
 		setDefaultDemoConfig(cfg)
+		cfg.GetUserConfig().Gui.UseHunkModeInStagingView = false
 	},
 	SetupRepo: func(shell *Shell) {
 		shell.CreateNCommitsWithRandomMessages(30)

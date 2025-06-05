@@ -1,6 +1,6 @@
 # User Config
 
-Default path for the config file:
+Default path for the global config file:
 
 - Linux: `~/.config/lazygit/config.yml`
 - MacOS: `~/Library/Application\ Support/lazygit/config.yml`
@@ -16,6 +16,8 @@ If you want to change the config directory:
 
 - MacOS: `export XDG_CONFIG_HOME="$HOME/.config"`
 
+In addition to the global config file you can create repo-specific config files in `<repo>/.git/lazygit.yml`. Settings in these files override settings in the global config file. In addition, files called `.lazygit.yml` in any of the parent directories of a repo will also be loaded; this can be useful if you have settings that you want to apply to a group of repositories.
+
 JSON schema is available for `config.yml` so that IntelliSense in Visual Studio Code (completion and error checking) is automatically enabled when the [YAML Red Hat][yaml] extension is installed. However, note that automatic schema detection only works if your config file is in one of the standard paths mentioned above. If you override the path to the file, you can still make IntelliSense work by adding
 
 ```yaml
@@ -29,10 +31,27 @@ to the top of your config file or via [Visual Studio Code settings.json config][
 
 ## Default
 
+This is only meant as a reference for what config options exist, and what their default values are. It is not meant to be copied and pasted into your config file as a whole; that's not a good idea for several reasons. It is recommended to include only those settings in your config file that you actually want to change.
+
 <!-- START CONFIG YAML: AUTOMATICALLY GENERATED with `go generate ./..., DO NOT UPDATE MANUALLY -->
 ```yaml
 # Config relating to the Lazygit UI
 gui:
+  # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-author-color
+  authorColors: {}
+
+  # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-branch-color
+  branchColorPatterns: {}
+
+  # Custom icons for filenames and file extensions
+  # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-files-icon--color
+  customIcons:
+    # Map of filenames to icon properties (icon and color)
+    filenames: {}
+
+    # Map of file extensions (including the dot) to icon properties (icon and color)
+    extensions: {}
+
   # The number of lines you scroll by when scrolling the main window
   scrollHeight: 2
 
@@ -45,9 +64,19 @@ gui:
   # One of: 'margin' (default) | 'jump'
   scrollOffBehavior: margin
 
+  # The number of spaces per tab; used for everything that's shown in the main
+  # view, but probably mostly relevant for diffs.
+  # Note that when using a pager, the pager has its own tab width setting, so you
+  # need to pass it separately in the pager command.
+  tabWidth: 4
+
   # If true, capture mouse events.
-  # When mouse events are captured, it's a little harder to select text: e.g. requiring you to hold the option key when on macOS.
+  # When mouse events are captured, it's a little harder to select text: e.g.
+  # requiring you to hold the option key when on macOS.
   mouseEvents: true
+
+  # If true, do not show a warning when amending a commit.
+  skipAmendWarning: false
 
   # If true, do not show a warning when discarding changes in the staging view.
   skipDiscardChangeWarning: false
@@ -55,37 +84,57 @@ gui:
   # If true, do not show warning when applying/popping the stash
   skipStashWarning: false
 
-  # If true, do not show a warning when attempting to commit without any staged files; instead stage all unstaged files.
+  # If true, do not show a warning when attempting to commit without any staged
+  # files; instead stage all unstaged files.
   skipNoStagedFilesWarning: false
 
   # If true, do not show a warning when rewording a commit via an external editor
   skipRewordInEditorWarning: false
 
-  # Fraction of the total screen width to use for the left side section. You may want to pick a small number (e.g. 0.2) if you're using a narrow screen, so that you can see more of the main section.
+  # Fraction of the total screen width to use for the left side section. You may
+  # want to pick a small number (e.g. 0.2) if you're using a narrow screen, so
+  # that you can see more of the main section.
   # Number from 0 to 1.0.
   sidePanelWidth: 0.3333
 
-  # If true, increase the height of the focused side window; creating an accordion effect.
+  # If true, increase the height of the focused side window; creating an accordion
+  # effect.
   expandFocusedSidePanel: false
 
   # The weight of the expanded side panel, relative to the other panels. 2 means
-  # twice as tall as the other panels. Only relevant if `expandFocusedSidePanel` is true.
+  # twice as tall as the other panels. Only relevant if `expandFocusedSidePanel`
+  # is true.
   expandedSidePanelWeight: 2
 
-  # Sometimes the main window is split in two (e.g. when the selected file has both staged and unstaged changes). This setting controls how the two sections are split.
+  # Sometimes the main window is split in two (e.g. when the selected file has
+  # both staged and unstaged changes). This setting controls how the two sections
+  # are split.
   # Options are:
   # - 'horizontal': split the window horizontally
   # - 'vertical': split the window vertically
-  # - 'flexible': (default) split the window horizontally if the window is wide enough, otherwise split vertically
+  # - 'flexible': (default) split the window horizontally if the window is wide
+  # enough, otherwise split vertically
   mainPanelSplitMode: flexible
 
-  # How the window is split when in half screen mode (i.e. after hitting '+' once).
+  # How the window is split when in half screen mode (i.e. after hitting '+'
+  # once).
   # Possible values:
-  # - 'left': split the window horizontally (side panel on the left, main view on the right)
+  # - 'left': split the window horizontally (side panel on the left, main view on
+  # the right)
   # - 'top': split the window vertically (side panel on top, main view below)
   enlargedSideViewLocation: left
 
-  # One of 'auto' (default) | 'en' | 'zh-CN' | 'zh-TW' | 'pl' | 'nl' | 'ja' | 'ko' | 'ru'
+  # If true, wrap lines in the staging view to the width of the view. This makes
+  # it much easier to work with diffs that have long lines, e.g. paragraphs of
+  # markdown text.
+  wrapLinesInStagingView: true
+
+  # If true, hunk selection mode will be enabled by default when entering the
+  # staging view.
+  useHunkModeInStagingView: true
+
+  # One of 'auto' (default) | 'en' | 'zh-CN' | 'zh-TW' | 'pl' | 'nl' | 'ja' | 'ko'
+  # | 'ru' | 'pt'
   language: auto
 
   # Format used when displaying time e.g. commit time.
@@ -158,9 +207,19 @@ gui:
   # If true, show the '5 of 20' footer at the bottom of list views
   showListFooter: true
 
-  # If true, display the files in the file views as a tree. If false, display the files as a flat list.
-  # This can be toggled from within Lazygit with the '~' key, but that will not change the default.
+  # If true, display the files in the file views as a tree. If false, display the
+  # files as a flat list.
+  # This can be toggled from within Lazygit with the '`' key, but that will not
+  # change the default.
   showFileTree: true
+
+  # If true, add a "/" root item in the file tree representing the root of the
+  # repository. It is only added when necessary, i.e. when there is more than one
+  # item at top level.
+  showRootItemInFileTree: true
+
+  # If true, show the number of lines changed per file in the Files view
+  showNumstatInFilesView: false
 
   # If true, show a random tip in the command log when Lazygit starts
   showRandomTip: true
@@ -168,27 +227,29 @@ gui:
   # If true, show the command log
   showCommandLog: true
 
-  # If true, show the bottom line that contains keybinding info and useful buttons. If false, this line will be hidden except to display a loader for an in-progress action.
+  # If true, show the bottom line that contains keybinding info and useful
+  # buttons. If false, this line will be hidden except to display a loader for an
+  # in-progress action.
   showBottomLine: true
 
   # If true, show jump-to-window keybindings in window titles.
   showPanelJumps: true
-
-  # Deprecated: use nerdFontsVersion instead
-  showIcons: false
 
   # Nerd fonts version to use.
   # One of: '2' | '3' | empty string (default)
   # If empty, do not show icons.
   nerdFontsVersion: ""
 
-  # If true (default), file icons are shown in the file views. Only relevant if NerdFontsVersion is not empty.
+  # If true (default), file icons are shown in the file views. Only relevant if
+  # NerdFontsVersion is not empty.
   showFileIcons: true
 
-  # Whether to show full author names or their shortened form in the commit graph.
-  # One of 'auto' (default) | 'full' | 'short'
-  # If 'auto', initials will be shown in small windows, and full names - in larger ones.
-  commitAuthorFormat: auto
+  # Length of author name in (non-expanded) commits view. 2 means show initials
+  # only.
+  commitAuthorShortLength: 2
+
+  # Length of author name in expanded commits view. 2 means show initials only.
+  commitAuthorLongLength: 17
 
   # Length of commit hash in commits view. 0 shows '*' if NF icons aren't on.
   commitHashLength: 8
@@ -205,18 +266,21 @@ gui:
 
   # Whether to split the main window when viewing file changes.
   # One of: 'auto' | 'always'
-  # If 'auto', only split the main window when a file has both staged and unstaged changes
+  # If 'auto', only split the main window when a file has both staged and unstaged
+  # changes
   splitDiff: auto
 
-  # Default size for focused window. Window size can be changed from within Lazygit with '+' and '_' (but this won't change the default).
+  # Default size for focused window. Can be changed from within Lazygit with '+'
+  # and '_' (but this won't change the default).
   # One of: 'normal' (default) | 'half' | 'full'
-  windowSize: normal
+  screenMode: normal
 
   # Window border style.
-  # One of 'rounded' (default) | 'single' | 'double' | 'hidden'
+  # One of 'rounded' (default) | 'single' | 'double' | 'hidden' | 'bold'
   border: rounded
 
-  # If true, show a seriously epic explosion animation when nuking the working tree.
+  # If true, show a seriously epic explosion animation when nuking the working
+  # tree.
   animateExplosion: true
 
   # Whether to stack UI components on top of each other.
@@ -243,24 +307,42 @@ gui:
   # One of 'dashboard' (default) | 'allBranchesLog'
   statusPanelView: dashboard
 
+  # If true, jump to the Files panel after popping a stash
+  switchToFilesAfterStashPop: true
+
+  # If true, jump to the Files panel after applying a stash
+  switchToFilesAfterStashApply: true
+
+  # If true, when using the panel jump keys (default 1 through 5) and target panel
+  # is already active, go to next tab instead
+  switchTabsWithPanelJumpKeys: false
+
 # Config relating to git
 git:
+  # Array of pagers. Each entry has the following format:
+  #
+  #   # Value of the --color arg in the git diff command. Some pagers want
+  #   # this to be set to 'always' and some want it set to 'never'
+  #   colorArg: "always"
+  #
+  #   # e.g.
+  #   # diff-so-fancy
+  #   # delta --dark --paging=never
+  #   # ydiff -p cat -s --wrap --width={{columnWidth}}
+  #   pager: ""
+  #
+  #   # e.g. 'difft --color=always'
+  #   externalDiffCommand: ""
+  #
+  #   # If true, Lazygit will use git's `diff.external` config for paging.
+  #   # The advantage over `externalDiffCommand` is that this can be
+  #   # configured per file type in .gitattributes; see
+  #   # https://git-scm.com/docs/gitattributes#_defining_an_external_diff_driver.
+  #   useExternalDiffGitConfig: false
+  #
   # See https://github.com/jesseduffield/lazygit/blob/master/docs/Custom_Pagers.md
-  paging:
-    # Value of the --color arg in the git diff command. Some pagers want this to be set to 'always' and some want it set to 'never'
-    colorArg: always
-
-    # e.g.
-    # diff-so-fancy
-    # delta --dark --paging=never
-    # ydiff -p cat -s --wrap --width={{columnWidth}}
-    pager: ""
-
-    # If true, Lazygit will use whatever pager is specified in `$GIT_PAGER`, `$PAGER`, or your *git config*. If the pager ends with something like ` | less` we will strip that part out, because less doesn't play nice with our rendering approach. If the custom pager uses less under the hood, that will also break rendering (hence the `--paging=never` flag for the `delta` pager).
-    useConfig: false
-
-    # e.g. 'difft --color=always'
-    externalDiffCommand: ""
+  # for more information.
+  pagers: []
 
   # Config relating to committing
   commit:
@@ -275,19 +357,26 @@ git:
 
   # Config relating to merging
   merging:
-    # If true, run merges in a subprocess so that if a commit message is required, Lazygit will not hang
+    # If true, run merges in a subprocess so that if a commit message is required,
+    # Lazygit will not hang
     # Only applicable to unix users.
     manualCommit: false
 
     # Extra args passed to `git merge`, e.g. --no-ff
     args: ""
 
-  # list of branches that are considered 'main' branches, used when displaying commits
+    # The commit message to use for a squash merge commit. Can contain
+    # "{{selectedRef}}" and "{{currentBranch}}" placeholders.
+    squashMergeMessage: Squash merge {{selectedRef}} into {{currentBranch}}
+
+  # list of branches that are considered 'main' branches, used when displaying
+  # commits
   mainBranches:
     - master
     - main
 
-  # Prefix to use when skipping hooks. E.g. if set to 'WIP', then pre-commit hooks will be skipped when the commit message starts with 'WIP'
+  # Prefix to use when skipping hooks. E.g. if set to 'WIP', then pre-commit hooks
+  # will be skipped when the commit message starts with 'WIP'
   skipHookPrefix: WIP
 
   # If true, periodically fetch from remote
@@ -296,14 +385,41 @@ git:
   # If true, periodically refresh files and submodules
   autoRefresh: true
 
+  # If not "none", lazygit will automatically fast-forward local branches to match
+  # their upstream after fetching. Applies to branches that are not the currently
+  # checked out branch, and only to those that are strictly behind their upstream
+  # (as opposed to diverged).
+  # Possible values: 'none' | 'onlyMainBranches' | 'allBranches'
+  autoForwardBranches: onlyMainBranches
+
   # If true, pass the --all arg to git fetch
   fetchAll: true
+
+  # If true, lazygit will automatically stage files that used to have merge
+  # conflicts but no longer do; and it will also ask you if you want to continue a
+  # merge or rebase if you've resolved all conflicts. If false, it won't do either
+  # of these things.
+  autoStageResolvedConflicts: true
 
   # Command used when displaying the current branch git log in the main window
   branchLogCmd: git log --graph --color=always --abbrev-commit --decorate --date=relative --pretty=medium {{branchName}} --
 
-  # Command used to display git log of all branches in the main window
-  allBranchesLogCmd: git log --graph --all --color=always --abbrev-commit --decorate --date=relative  --pretty=medium
+  # Commands used to display git log of all branches in the main window, they will
+  # be cycled in order of appearance (array of strings)
+  allBranchesLogCmds:
+    - git log --graph --all --color=always --abbrev-commit --decorate --date=relative  --pretty=medium
+
+  # If true, git diffs are rendered with the `--ignore-all-space` flag, which
+  # ignores whitespace changes. Can be toggled from within Lazygit with `<c-w>`.
+  ignoreWhitespaceInDiffView: false
+
+  # The number of lines of context to show around each diff hunk. Can be changed
+  # from within Lazygit with the `{` and `}` keys.
+  diffContextSize: 3
+
+  # The threshold for considering a file to be renamed, in percent. Can be changed
+  # from within Lazygit with the `(` and `)` keys.
+  renameSimilarityThreshold: 50
 
   # If true, do not spawn a separate process when using GPG
   overrideGpg: false
@@ -312,12 +428,13 @@ git:
   disableForcePushing: false
 
   # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#predefined-commit-message-prefix
-  commitPrefix:
-    # pattern to match on. E.g. for 'feature/AB-123' to match on the AB-123 use "^\\w+\\/(\\w+-\\w+).*"
-    pattern: ""
+  commitPrefix: []
 
-    # Replace directive. E.g. for 'feature/AB-123' to start the commit message with 'AB-123 ' use "[$1] "
-    replace: ""
+  # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#predefined-commit-message-prefix
+  commitPrefixes: {}
+
+  # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#predefined-branch-name-prefix
+  branchPrefix: ""
 
   # If true, parse emoji strings in commit messages e.g. render :rocket: as 🚀
   # (This should really be under 'gui', not 'git')
@@ -329,20 +446,35 @@ git:
     # 'topo-order' makes it easier to read the git log graph, but commits may not
     # appear chronologically. See https://git-scm.com/docs/
     #
-    # Deprecated: Configure this with `Log menu -> Commit sort order` (<c-l> in the commits window by default).
+    # Can be changed from within Lazygit with `Log menu -> Commit sort order`
+    # (`<c-l>` in the commits window by default).
     order: topo-order
 
     # This determines whether the git graph is rendered in the commits panel
     # One of 'always' | 'never' | 'when-maximised'
     #
-    # Deprecated: Configure this with `Log menu -> Show git graph` (<c-l> in the commits window by default).
+    # Can be toggled from within lazygit with `Log menu -> Show git graph` (`<c-l>`
+    # in the commits window by default).
     showGraph: always
 
-    # displays the whole git graph by default in the commits view (equivalent to passing the `--all` argument to `git log`)
+    # displays the whole git graph by default in the commits view (equivalent to
+    # passing the `--all` argument to `git log`)
     showWholeGraph: false
 
-  # When copying commit hashes to the clipboard, truncate them to this
-  # length. Set to 40 to disable truncation.
+  # How branches are sorted in the local branches view.
+  # One of: 'date' (default) | 'recency' | 'alphabetical'
+  # Can be changed from within Lazygit with the Sort Order menu (`s`) in the
+  # branches panel.
+  localBranchSortOrder: date
+
+  # How branches are sorted in the remote branches view.
+  # One of: 'date' (default) | 'alphabetical'
+  # Can be changed from within Lazygit with the Sort Order menu (`s`) in the
+  # remote branches panel.
+  remoteBranchSortOrder: date
+
+  # When copying commit hashes to the clipboard, truncate them to this length. Set
+  # to 40 to disable truncation.
   truncateCopiedCommitHashesTo: 12
 
 # Periodic update checks
@@ -366,10 +498,12 @@ refresher:
 # If true, show a confirmation popup before quitting Lazygit
 confirmOnQuit: false
 
-# If true, exit Lazygit when the user presses escape in a context where there is nothing to cancel/close
+# If true, exit Lazygit when the user presses escape in a context where there is
+# nothing to cancel/close
 quitOnTopLevelReturn: false
 
-# Config relating to things outside of Lazygit like how files are opened, copying to clipboard, etc
+# Config relating to things outside of Lazygit like how files are opened,
+# copying to clipboard, etc
 os:
   # Command for editing a file. Should contain "{{filename}}".
   edit: ""
@@ -378,41 +512,26 @@ os:
   # "{{filename}}", and may optionally contain "{{line}}".
   editAtLine: ""
 
-  # Same as EditAtLine, except that the command needs to wait until the
-  # window is closed.
+  # Same as EditAtLine, except that the command needs to wait until the window is
+  # closed.
   editAtLineAndWait: ""
+
+  # Whether lazygit suspends until an edit process returns
+  editInTerminal: false
 
   # For opening a directory in an editor
   openDirInEditor: ""
 
-  # A built-in preset that sets all of the above settings. Supported presets
-  # are defined in the getPreset function in editor_presets.go.
+  # A built-in preset that sets all of the above settings. Supported presets are
+  # defined in the getPreset function in editor_presets.go.
   editPreset: ""
 
-  # Command for opening a file, as if the file is double-clicked. Should
-  # contain "{{filename}}", but doesn't support "{{line}}".
+  # Command for opening a file, as if the file is double-clicked. Should contain
+  # "{{filename}}", but doesn't support "{{line}}".
   open: ""
 
   # Command for opening a link. Should contain "{{link}}".
   openLink: ""
-
-  # EditCommand is the command for editing a file.
-  # Deprecated: use Edit instead. Note that semantics are different:
-  # EditCommand is just the command itself, whereas Edit contains a
-  # "{{filename}}" variable.
-  editCommand: ""
-
-  # EditCommandTemplate is the command template for editing a file
-  # Deprecated: use EditAtLine instead.
-  editCommandTemplate: ""
-
-  # OpenCommand is the command for opening a file
-  # Deprecated: use Open instead.
-  openCommand: ""
-
-  # OpenLinkCommand is the command for opening a link
-  # Deprecated: use OpenLink instead.
-  openLinkCommand: ""
 
   # CopyToClipboardCmd is the command for copying to clipboard.
   # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-command-for-copying-to-and-pasting-from-clipboard
@@ -422,17 +541,32 @@ os:
   # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-command-for-copying-to-and-pasting-from-clipboard
   readFromClipboardCmd: ""
 
+  # A shell startup file containing shell aliases or shell functions. This will be
+  # sourced before running any shell commands, so that shell functions are
+  # available in the `:` command prompt or even in custom commands.
+  # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#using-aliases-or-functions-in-shell-commands
+  shellFunctionsFile: ""
+
 # If true, don't display introductory popups upon opening Lazygit.
 disableStartupPopups: false
 
+# User-configured commands that can be invoked from within Lazygit
+# See https://github.com/jesseduffield/lazygit/blob/master/docs/Custom_Command_Keybindings.md
+customCommands: []
+
+# See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-pull-request-urls
+services: {}
+
 # What to do when opening Lazygit outside of a git repo.
-# - 'prompt': (default) ask whether to initialize a new repo or open in the most recent repo
+# - 'prompt': (default) ask whether to initialize a new repo or open in the most
+# recent repo
 # - 'create': initialize a new repo
 # - 'skip': open most recent repo
 # - 'quit': exit Lazygit
 notARepository: prompt
 
-# If true, display a confirmation when subprocess terminates. This allows you to view the output of the subprocess before returning to Lazygit.
+# If true, display a confirmation when subprocess terminates. This allows you to
+# view the output of the subprocess before returning to Lazygit.
 promptToReturnFromSubprocess: true
 
 # Keybindings
@@ -440,6 +574,7 @@ keybinding:
   universal:
     quit: q
     quit-alt1: <c-c>
+    suspendApp: <c-z>
     return: <esc>
     quitWithoutChangingDirectory: Q
     togglePanel: <tab>
@@ -453,6 +588,8 @@ keybinding:
     scrollRight: L
     gotoTop: <
     gotoBottom: '>'
+    gotoTop-alt: <home>
+    gotoBottom-alt: <end>
     toggleRangeSelect: v
     rangeSelectDown: <s-down>
     rangeSelectUp: <s-up>
@@ -468,6 +605,7 @@ keybinding:
       - "3"
       - "4"
       - "5"
+    focusMainView: "0"
     nextMatch: "n"
     prevMatch: "N"
     startSearch: /
@@ -476,7 +614,10 @@ keybinding:
     select: <space>
     goInto: <enter>
     confirm: <enter>
+    confirmMenu: <enter>
+    confirmSuggestion: <enter>
     confirmInEditor: <a-enter>
+    confirmInEditor-alt: <c-s>
     remove: d
     new: "n"
     edit: e
@@ -487,7 +628,7 @@ keybinding:
     scrollDownMain-alt1: J
     scrollUpMain-alt2: <c-u>
     scrollDownMain-alt2: <c-d>
-    executeCustomCommand: ':'
+    executeShellCommand: ':'
     createRebaseOptionsMenu: m
 
     # 'Files' appended for legacy reasons
@@ -501,8 +642,9 @@ keybinding:
     prevTab: '['
     nextScreenMode: +
     prevScreenMode: _
+    cyclePagers: '|'
     undo: z
-    redo: <c-z>
+    redo: Z
     filteringMenu: <c-s>
     diffingMenu: W
     diffingMenu-alt: <c-e>
@@ -513,6 +655,8 @@ keybinding:
     toggleWhitespaceInDiffView: <c-w>
     increaseContextInDiffView: '}'
     decreaseContextInDiffView: '{'
+    increaseRenameSimilarityThreshold: )
+    decreaseRenameSimilarityThreshold: (
     openDiffTool: <c-t>
   status:
     checkForUpdate: u
@@ -533,18 +677,22 @@ keybinding:
     viewResetOptions: D
     fetch: f
     toggleTreeView: '`'
-    openMergeTool: M
+    openMergeOptions: M
     openStatusFilter: <c-b>
     copyFileInfoToClipboard: "y"
+    collapseAll: '-'
+    expandAll: =
   branches:
     createPullRequest: o
     viewPullRequestOptions: O
     copyPullRequestURL: <c-y>
     checkoutBranchByName: c
     forceCheckoutBranch: F
+    checkoutPreviousBranch: '-'
     rebaseBranch: r
     renameBranch: R
     mergeIntoCurrentBranch: M
+    moveCommitsToNewBranch: "N"
     viewGitFlowOptions: i
     fastForward: f
     createTag: T
@@ -579,6 +727,7 @@ keybinding:
     openInBrowser: o
     viewBisectOptions: b
     startInteractiveRebase: i
+    selectCommitsOfCurrentBranch: '*'
   amendAttribute:
     resetAuthor: a
     setAuthor: A
@@ -624,24 +773,57 @@ os:
   open: 'open {{filename}}'
 ```
 
+## Custom Command for Opening a Link
+
+```yaml
+os:
+  openLink: 'bash -C /path/to/your/shell-script.sh {{link}}'
+```
+
+Specify the external command to invoke when opening URL links (i.e. creating MR/PR in GitLab, BitBucket or GitHub). `{{link}}` will be replaced by the URL to be opened. A simple shell script can be used to further mangle the passed URL.
+
 ## Custom Command for Copying to and Pasting from Clipboard
+
 ```yaml
 os:
   copyToClipboardCmd: ''
 ```
+
 Specify an external command to invoke when copying to clipboard is requested. `{{text}` will be replaced by text to be copied. Default is to copy to system clipboard.
 
 If you are working on a terminal that supports OSC52, the following command will let you take advantage of it:
-```
+
+```yaml
 os:
-  copyToClipboardCmd: printf "\033]52;c;$(printf {{text}} | base64)\a" > /dev/tty
+  copyToClipboardCmd: printf "\033]52;c;$(printf {{text}} | base64 -w 0)\a" > /dev/tty
+```
+
+For tmux you need to wrap it with the [tmux escape sequence](https://github.com/tmux/tmux/wiki/FAQ#what-is-the-passthrough-escape-sequence-and-how-do-i-use-it), and enable passthrough in tmux config with `set -g allow-passthrough on`:
+
+```yaml
+os:
+  copyToClipboardCmd: printf "\033Ptmux;\033\033]52;c;$(printf {{text}} | base64 -w 0)\a\033\\" > /dev/tty
+```
+
+For the best of both worlds, we can let the command determine if we are running in a tmux session and send the correct sequence:
+
+```yaml
+os:
+  copyToClipboardCmd: >
+    if [[ "$TERM" =~ ^(screen|tmux) ]]; then
+      printf "\033Ptmux;\033\033]52;c;$(printf {{text}} | base64 -w 0)\a\033\\" > /dev/tty
+    else
+      printf "\033]52;c;$(printf {{text}} | base64 -w 0)\a" > /dev/tty
+    fi
 ```
 
 A custom command for reading from the clipboard can be set using
+
 ```yaml
 os:
   readFromClipboardCmd: ''
 ```
+
 It is used, for example, when pasting a commit message into the commit message panel. The command is supposed to output the clipboard content to stdout.
 
 ## Configuring File Editing
@@ -655,7 +837,7 @@ os:
   editPreset: 'vscode'
 ```
 
-Supported presets are `vim`, `nvim`, `nvim-remote`, `lvim`, `emacs`, `nano`, `micro`, `vscode`, `sublime`, `bbedit`, `kakoune`, `helix`, and `xcode`. In many cases lazygit will be able to guess the right preset from your $(git config core.editor), or an environment variable such as $VISUAL or $EDITOR.
+Supported presets are `vim`, `nvim`, `nvim-remote`, `lvim`, `emacs`, `nano`, `micro`, `vscode`, `sublime`, `bbedit`, `kakoune`, `helix`, `xcode`, `zed` and `acme`. In many cases lazygit will be able to guess the right preset from your $(git config core.editor), or an environment variable such as $VISUAL or $EDITOR.
 
 `nvim-remote` is an experimental preset for when you have invoked lazygit from within a neovim process, allowing lazygit to open the file from within the parent process rather than spawning a new one.
 
@@ -673,6 +855,21 @@ os:
 The `editInTerminal` option is used to decide whether lazygit needs to suspend itself to the background before calling the editor. It should really be named `suspend` because for some cases like when lazygit is opened from within a neovim session and you're using the `nvim-remote` preset, you're technically still in a terminal. Nonetheless we're sticking with the name `editInTerminal` for backwards compatibility.
 
 Contributions of new editor presets are welcome; see the `getPreset` function in [`editor_presets.go`](https://github.com/jesseduffield/lazygit/blob/master/pkg/config/editor_presets.go).
+
+## Using aliases or functions in shell commands
+
+Lazygit has a command prompt (`:`) for quickly executing shell commands without having to quit lazygit or switch to a different terminal. Most people find it convenient to have their usual shell aliases or shell functions available at this prompt. To achieve this, put your alias definitions in a separate shell startup file (which you source from your normal startup file, i.e. from `.bashrc` or `.zshrc`), and then tell lazygit about this file like so:
+
+```yml
+os:
+  shellFunctionsFile: ~/.my_aliases.sh
+```
+
+For many people it might work well enough to use their entire shell config file (`~/.bashrc` or `~/.zshrc`) as the `shellFunctionsFile`, but these config files typically do a lot more than defining aliases (e.g. initialize the completion system, start an ssh-agent, etc.) and this may unnecessarily delay execution of shell commands.
+
+When using zsh, aliases can't be used here, but functions can. It is easy to convert your existing aliases into functions, just change `alias l="ls -la"` to `l() ls -la`, for example. This way it will work as before both in the shell and in lazygit.
+
+Note that the shell aliases file is not only used when executing shell commands, but also for [custom commands](Custom_Command_Keybindings.md), and when opening a file in the editor.
 
 ## Overriding default config file location
 
@@ -773,13 +970,37 @@ gui:
 
 ## Custom Branch Color
 
-You can customize the color of branches based on the branch prefix:
+You can customize the color of branches based on branch patterns (regular expressions):
 
 ```yaml
 gui:
-  branchColors:
-    'docs': '#11aaff' # use a light blue for branches beginning with 'docs/'
+  branchColorPatterns:
+    '^docs/': '#11aaff' # use a light blue for branches beginning with 'docs/'
+    'ISSUE-\d+': '#ff5733' # use a bright orange for branches containing 'ISSUE-<some-number>'
 ```
+
+Note that the regular expressions are not implicitly anchored to the beginning/end of the branch name. If you want to do that, add leading `^` and/or trailing `$` as needed.
+
+## Custom Files Icon & Color
+
+You can customize the icon and color of files based on filenames or extensions:
+
+```yaml
+gui:
+  customIcons:
+    filenames:
+      "CONTRIBUTING.md": { icon: "\uede2", color: "#FEDDEF" }
+      "HACKING.md": { icon: "\uede2", color: "#FEDDEF" }
+    extensions:
+      ".cat":
+        icon: "\U000f011b"
+        color: "#BC4009"
+      ".dog":
+        icon: "\U000f0a43"
+        color: "#B6977E"
+```
+
+Note that there is no support for regular expressions.
 
 ## Example Coloring
 
@@ -858,28 +1079,74 @@ Where:
 ## Predefined commit message prefix
 
 In situations where certain naming pattern is used for branches and commits, pattern can be used to populate commit message with prefix that is parsed from the branch name.
+If you define multiple naming patterns, they will be attempted in order until one matches.
 
-Example:
+Example hitting first match:
 
 - Branch name: feature/AB-123
-- Commit message: [AB-123] Adding feature
+- Generated commit message prefix: [AB-123]
+
+Example hitting second match:
+
+- Branch name: CD-456_fix_problem
+- Generated commit message prefix: (CD-456)
 
 ```yaml
 git:
   commitPrefix:
-    pattern: "^\\w+\\/(\\w+-\\w+).*"
-    replace: '[$1] '
+    - pattern: "^\\w+\\/(\\w+-\\w+).*"
+      replace: '[$1] '
+    - pattern: "^([^_]+)_.*" # Take all text prior to the first underscore
+      replace: '($1) '
 ```
 
-If you want repository-specific prefixes, you can map them with `commitPrefixes`. If you have both `commitPrefixes` defined and an entry in `commitPrefixes` for the current repo, the `commitPrefixes` entry is given higher precedence. Repository folder names must be an exact match.
+If you want repository-specific prefixes, you can map them with `commitPrefixes`. If you have both entries in `commitPrefix` defined and an repository match in `commitPrefixes` for the current repo, the `commitPrefixes` entries will be attempted first. Repository folder names must be an exact match.
 
 ```yaml
 git:
   commitPrefixes:
     my_project: # This is repository folder name
-      pattern: "^\\w+\\/(\\w+-\\w+).*"
-      replace: '[$1] '
+      - pattern: "^\\w+\\/(\\w+-\\w+).*"
+        replace: '[$1] '
+  commitPrefix:
+      - pattern: "^(\\w+)-.*" # A more general match for any leading word
+        replace : '[$1] '
+      - pattern: ".*" # The final fallthrough regex that copies over the whole branch name
+        replace : '[$0] '
 ```
+
+> [!IMPORTANT]
+> The way golang regex works is when you use `$n` in the replacement string, where `n` is a number, it puts the nth captured subgroup at that place. If `n` is out of range because there aren't that many capture groups in the regex, it puts an empty string there.
+>
+> So make sure you are capturing group or groups in your regex.
+>
+> For example `^[A-Z]+-\d+$` won't work on branch name like BRANCH-1111
+> But `^([A-Z]+-\d+)$` will
+
+## Predefined branch name prefix
+
+In situations where certain naming pattern is used for branches, this can be used to populate new branch creation with a static prefix.
+
+Example:
+
+Some branches:
+
+- jsmith/AB-123
+- cwilson/AB-125
+
+```yaml
+git:
+  branchPrefix: "firstlast/"
+```
+
+It's possible to use a dynamic prefix by using the `runCommand` function:
+
+```yaml
+git:
+  branchPrefix: "firstlast/{{ runCommand "date +\"%Y/%-m\"" }}/"
+```
+
+This would produce something like: `firstlast/2025/4/`
 
 ## Custom git log command
 

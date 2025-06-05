@@ -10,7 +10,7 @@ var ShowDivergenceFromBaseBranch = NewIntegrationTest(NewIntegrationTestArgs{
 	ExtraCmdArgs: []string{},
 	Skip:         false,
 	SetupConfig: func(config *config.AppConfig) {
-		config.UserConfig.Gui.ShowDivergenceFromBaseBranch = "arrowAndNumber"
+		config.GetUserConfig().Gui.ShowDivergenceFromBaseBranch = "arrowAndNumber"
 	},
 	SetupRepo: func(shell *Shell) {
 		shell.
@@ -25,7 +25,7 @@ var ShowDivergenceFromBaseBranch = NewIntegrationTest(NewIntegrationTestArgs{
 		t.Views().Branches().
 			Focus().
 			Lines(
-				Contains("feature ↓1").IsSelected(),
+				MatchesRegexp(`feature\s+↓1`).IsSelected(),
 				Contains("master"),
 			).
 			Press(keys.Branches.SetUpstream)

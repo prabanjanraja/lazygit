@@ -1,5 +1,4 @@
 //go:build !windows
-// +build !windows
 
 package oscommands
 
@@ -75,7 +74,7 @@ func TestOSCommandOpenFileDarwin(t *testing.T) {
 	for _, s := range scenarios {
 		oSCmd := NewDummyOSCommandWithRunner(s.runner)
 		oSCmd.Platform.OS = "darwin"
-		oSCmd.UserConfig.OS.Open = "open {{filename}}"
+		oSCmd.UserConfig().OS.Open = "open {{filename}}"
 
 		s.test(oSCmd.OpenFile(s.filename))
 	}
@@ -135,7 +134,7 @@ func TestOSCommandOpenFileLinux(t *testing.T) {
 	for _, s := range scenarios {
 		oSCmd := NewDummyOSCommandWithRunner(s.runner)
 		oSCmd.Platform.OS = "linux"
-		oSCmd.UserConfig.OS.Open = `xdg-open {{filename}} > /dev/null`
+		oSCmd.UserConfig().OS.Open = `xdg-open {{filename}} > /dev/null`
 
 		s.test(oSCmd.OpenFile(s.filename))
 	}

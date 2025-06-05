@@ -3,7 +3,9 @@ package git_commands
 import (
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/go-errors/errors"
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
@@ -28,24 +30,30 @@ func NewWorkingTreeCommands(
 	}
 }
 
-func (self *WorkingTreeCommands) OpenMergeToolCmdObj() oscommands.ICmdObj {
+func (self *WorkingTreeCommands) OpenMergeToolCmdObj() *oscommands.CmdObj {
 	return self.cmd.New(NewGitCmd("mergetool").ToArgv())
 }
 
 // StageFile stages a file
 func (self *WorkingTreeCommands) StageFile(path string) error {
-	return self.StageFiles([]string{path})
+	return self.StageFiles([]string{path}, nil)
 }
 
-func (self *WorkingTreeCommands) StageFiles(paths []string) error {
-	cmdArgs := NewGitCmd("add").Arg("--").Arg(paths...).ToArgv()
+func (self *WorkingTreeCommands) StageFiles(paths []string, extraArgs []string) error {
+	cmdArgs := NewGitCmd("add").
+		Arg(extraArgs...).
+		Arg("--").
+		Arg(paths...).
+		ToArgv()
 
 	return self.cmd.New(cmdArgs).Run()
 }
 
 // StageAll stages all files
-func (self *WorkingTreeCommands) StageAll() error {
-	cmdArgs := NewGitCmd("add").Arg("-A").ToArgv()
+func (self *WorkingTreeCommands) StageAll(onlyTrackedFiles bool) error {
+	cmdArgs := NewGitCmd("add").
+		ArgIfElse(onlyTrackedFiles, "-u", "-A").
+		ToArgv()
 
 	return self.cmd.New(cmdArgs).Run()
 }
@@ -61,9 +69,8 @@ func (self *WorkingTreeCommands) UnstageAll() error {
 func (self *WorkingTreeCommands) UnStageFile(paths []string, tracked bool) error {
 	if tracked {
 		return self.UnstageTrackedFiles(paths)
-	} else {
-		return self.UnstageUntrackedFiles(paths)
 	}
+	return self.UnstageUntrackedFiles(paths)
 }
 
 func (self *WorkingTreeCommands) UnstageTrackedFiles(paths []string) error {
@@ -88,11 +95,11 @@ func (self *WorkingTreeCommands) BeforeAndAfterFileForRename(file *models.File) 
 	var beforeFile *models.File
 	var afterFile *models.File
 	for _, f := range filesWithoutRenames {
-		if f.Name == file.PreviousName {
+		if f.Path == file.PreviousPath {
 			beforeFile = f
 		}
 
-		if f.Name == file.Name {
+		if f.Path == file.Path {
 			afterFile = f
 		}
 	}
@@ -130,13 +137,13 @@ func (self *WorkingTreeCommands) DiscardAllFileChanges(file *models.File) error 
 
 	if file.ShortStatus == "AA" {
 		if err := self.cmd.New(
-			NewGitCmd("checkout").Arg("--ours", "--", file.Name).ToArgv(),
+			NewGitCmd("checkout").Arg("--ours", "--", file.Path).ToArgv(),
 		).Run(); err != nil {
 			return err
 		}
 
 		if err := self.cmd.New(
-			NewGitCmd("add").Arg("--", file.Name).ToArgv(),
+			NewGitCmd("add").Arg("--", file.Path).ToArgv(),
 		).Run(); err != nil {
 			return err
 		}
@@ -145,14 +152,14 @@ func (self *WorkingTreeCommands) DiscardAllFileChanges(file *models.File) error 
 
 	if file.ShortStatus == "DU" {
 		return self.cmd.New(
-			NewGitCmd("rm").Arg("--", file.Name).ToArgv(),
+			NewGitCmd("rm").Arg("--", file.Path).ToArgv(),
 		).Run()
 	}
 
 	// if the file isn't tracked, we assume you want to delete it
 	if file.HasStagedChanges || file.HasMergeConflicts {
 		if err := self.cmd.New(
-			NewGitCmd("reset").Arg("--", file.Name).ToArgv(),
+			NewGitCmd("reset").Arg("--", file.Path).ToArgv(),
 		).Run(); err != nil {
 			return err
 		}
@@ -163,7 +170,7 @@ func (self *WorkingTreeCommands) DiscardAllFileChanges(file *models.File) error 
 	}
 
 	if file.Added {
-		return self.os.RemoveFile(file.Name)
+		return self.os.RemoveFile(file.Path)
 	}
 
 	return self.DiscardUnstagedFileChanges(file)
@@ -195,7 +202,7 @@ func (self *WorkingTreeCommands) DiscardUnstagedDirChanges(node IFileNode) error
 		}
 	} else {
 		if file.Added && !file.HasStagedChanges {
-			return self.os.RemoveFile(file.Name)
+			return self.os.RemoveFile(file.Path)
 		}
 
 		if err := self.DiscardUnstagedFileChanges(file); err != nil {
@@ -222,19 +229,25 @@ func (self *WorkingTreeCommands) RemoveUntrackedDirFiles(node IFileNode) error {
 }
 
 func (self *WorkingTreeCommands) DiscardUnstagedFileChanges(file *models.File) error {
-	cmdArgs := NewGitCmd("checkout").Arg("--", file.Name).ToArgv()
+	cmdArgs := NewGitCmd("checkout").Arg("--", file.Path).ToArgv()
 	return self.cmd.New(cmdArgs).Run()
+}
+
+// Escapes special characters in a filename for gitignore and exclude files
+func escapeFilename(filename string) string {
+	re := regexp.MustCompile(`^[!#]|[\[\]*]`)
+	return re.ReplaceAllString(filename, `\${0}`)
 }
 
 // Ignore adds a file to the gitignore for the repo
 func (self *WorkingTreeCommands) Ignore(filename string) error {
-	return self.os.AppendLineToFile(".gitignore", filename)
+	return self.os.AppendLineToFile(".gitignore", escapeFilename(filename))
 }
 
 // Exclude adds a file to the .git/info/exclude for the repo
 func (self *WorkingTreeCommands) Exclude(filename string) error {
-	excludeFile := path.Join(self.repoPaths.repoGitDirPath, "info", "exclude")
-	return self.os.AppendLineToFile(excludeFile, filename)
+	excludeFile := filepath.Join(self.repoPaths.repoGitDirPath, "info", "exclude")
+	return self.os.AppendLineToFile(excludeFile, escapeFilename(filename))
 }
 
 // WorktreeFileDiff returns the diff of a file
@@ -244,25 +257,27 @@ func (self *WorkingTreeCommands) WorktreeFileDiff(file *models.File, plain bool,
 	return s
 }
 
-func (self *WorkingTreeCommands) WorktreeFileDiffCmdObj(node models.IFile, plain bool, cached bool) oscommands.ICmdObj {
-	colorArg := self.UserConfig.Git.Paging.ColorArg
+func (self *WorkingTreeCommands) WorktreeFileDiffCmdObj(node models.IFile, plain bool, cached bool) *oscommands.CmdObj {
+	colorArg := self.pagerConfig.GetColorArg()
 	if plain {
 		colorArg = "never"
 	}
 
-	contextSize := self.AppState.DiffContextSize
+	contextSize := self.UserConfig().Git.DiffContextSize
 	prevPath := node.GetPreviousPath()
 	noIndex := !node.GetIsTracked() && !node.GetHasStagedChanges() && !cached && node.GetIsFile()
-	extDiffCmd := self.UserConfig.Git.Paging.ExternalDiffCommand
+	extDiffCmd := self.pagerConfig.GetExternalDiffCommand()
 	useExtDiff := extDiffCmd != "" && !plain
+	useExtDiffGitConfig := self.pagerConfig.GetUseExternalDiffGitConfig() && !plain
 
 	cmdArgs := NewGitCmd("diff").
 		ConfigIf(useExtDiff, "diff.external="+extDiffCmd).
-		ArgIfElse(useExtDiff, "--ext-diff", "--no-ext-diff").
+		ArgIfElse(useExtDiff || useExtDiffGitConfig, "--ext-diff", "--no-ext-diff").
 		Arg("--submodule").
 		Arg(fmt.Sprintf("--unified=%d", contextSize)).
 		Arg(fmt.Sprintf("--color=%s", colorArg)).
-		ArgIf(!plain && self.AppState.IgnoreWhitespaceInDiffView, "--ignore-all-space").
+		ArgIf(!plain && self.UserConfig().Git.IgnoreWhitespaceInDiffView, "--ignore-all-space").
+		Arg(fmt.Sprintf("--find-renames=%d%%", self.UserConfig().Git.RenameSimilarityThreshold)).
 		ArgIf(cached, "--cached").
 		ArgIf(noIndex, "--no-index").
 		Arg("--").
@@ -281,21 +296,22 @@ func (self *WorkingTreeCommands) ShowFileDiff(from string, to string, reverse bo
 	return self.ShowFileDiffCmdObj(from, to, reverse, fileName, plain).RunWithOutput()
 }
 
-func (self *WorkingTreeCommands) ShowFileDiffCmdObj(from string, to string, reverse bool, fileName string, plain bool) oscommands.ICmdObj {
-	contextSize := self.AppState.DiffContextSize
+func (self *WorkingTreeCommands) ShowFileDiffCmdObj(from string, to string, reverse bool, fileName string, plain bool) *oscommands.CmdObj {
+	contextSize := self.UserConfig().Git.DiffContextSize
 
-	colorArg := self.UserConfig.Git.Paging.ColorArg
+	colorArg := self.pagerConfig.GetColorArg()
 	if plain {
 		colorArg = "never"
 	}
 
-	extDiffCmd := self.UserConfig.Git.Paging.ExternalDiffCommand
+	extDiffCmd := self.pagerConfig.GetExternalDiffCommand()
 	useExtDiff := extDiffCmd != "" && !plain
+	useExtDiffGitConfig := self.pagerConfig.GetUseExternalDiffGitConfig() && !plain
 
 	cmdArgs := NewGitCmd("diff").
 		Config("diff.noprefix=false").
 		ConfigIf(useExtDiff, "diff.external="+extDiffCmd).
-		ArgIfElse(useExtDiff, "--ext-diff", "--no-ext-diff").
+		ArgIfElse(useExtDiff || useExtDiffGitConfig, "--ext-diff", "--no-ext-diff").
 		Arg("--submodule").
 		Arg(fmt.Sprintf("--unified=%d", contextSize)).
 		Arg("--no-renames").
@@ -303,7 +319,7 @@ func (self *WorkingTreeCommands) ShowFileDiffCmdObj(from string, to string, reve
 		Arg(from).
 		Arg(to).
 		ArgIf(reverse, "-R").
-		ArgIf(!plain && self.AppState.IgnoreWhitespaceInDiffView, "--ignore-all-space").
+		ArgIf(!plain && self.UserConfig().Git.IgnoreWhitespaceInDiffView, "--ignore-all-space").
 		Arg("--").
 		Arg(fileName).
 		Dir(self.repoPaths.worktreePath).
@@ -331,6 +347,13 @@ func (self *WorkingTreeCommands) DiscardAnyUnstagedFileChanges() error {
 // RemoveTrackedFiles will delete the given file(s) even if they are currently tracked
 func (self *WorkingTreeCommands) RemoveTrackedFiles(name string) error {
 	cmdArgs := NewGitCmd("rm").Arg("-r", "--cached", "--", name).
+		ToArgv()
+
+	return self.cmd.New(cmdArgs).Run()
+}
+
+func (self *WorkingTreeCommands) RemoveConflictedFile(name string) error {
+	cmdArgs := NewGitCmd("rm").Arg("--", name).
 		ToArgv()
 
 	return self.cmd.New(cmdArgs).Run()
@@ -384,4 +407,47 @@ func (self *WorkingTreeCommands) ResetMixed(ref string) error {
 		ToArgv()
 
 	return self.cmd.New(cmdArgs).Run()
+}
+
+func (self *WorkingTreeCommands) ShowFileAtStage(path string, stage int) (string, error) {
+	cmdArgs := NewGitCmd("show").
+		Arg(fmt.Sprintf(":%d:%s", stage, path)).
+		ToArgv()
+
+	return self.cmd.New(cmdArgs).RunWithOutput()
+}
+
+func (self *WorkingTreeCommands) ObjectIDAtStage(path string, stage int) (string, error) {
+	cmdArgs := NewGitCmd("rev-parse").
+		Arg(fmt.Sprintf(":%d:%s", stage, path)).
+		ToArgv()
+
+	output, err := self.cmd.New(cmdArgs).RunWithOutput()
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(output), nil
+}
+
+func (self *WorkingTreeCommands) MergeFileForFiles(strategy string, oursFilepath string, baseFilepath string, theirsFilepath string) (string, error) {
+	cmdArgs := NewGitCmd("merge-file").
+		Arg(strategy).
+		Arg("--stdout").
+		Arg(oursFilepath, baseFilepath, theirsFilepath).
+		ToArgv()
+
+	return self.cmd.New(cmdArgs).RunWithOutput()
+}
+
+// OIDs mode (Git 2.43+)
+func (self *WorkingTreeCommands) MergeFileForObjectIDs(strategy string, oursID string, baseID string, theirsID string) (string, error) {
+	cmdArgs := NewGitCmd("merge-file").
+		Arg(strategy).
+		Arg("--stdout").
+		Arg("--object-id").
+		Arg(oursID, baseID, theirsID).
+		ToArgv()
+
+	return self.cmd.New(cmdArgs).RunWithOutput()
 }

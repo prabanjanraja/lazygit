@@ -25,7 +25,7 @@ type ColumnConfig struct {
 func StringWidth(s string) int {
 	// We are intentionally not using a range loop here, because that would
 	// convert the characters to runes, which is unnecessary work in this case.
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		if s[i] > unicode.MaxASCII {
 			return runewidth.StringWidth(s)
 		}
@@ -44,9 +44,8 @@ func WithPadding(str string, padding int, alignment Alignment) string {
 	space := strings.Repeat(" ", padding-width)
 	if alignment == AlignLeft {
 		return str + space
-	} else {
-		return space + str
 	}
+	return space + str
 }
 
 // defaults to left-aligning each column. If you want to set the alignment of
@@ -54,6 +53,10 @@ func WithPadding(str string, padding int, alignment Alignment) string {
 // returns a list of strings that should be joined with "\n", and an array of
 // the column positions
 func RenderDisplayStrings(displayStringsArr [][]string, columnAlignments []Alignment) ([]string, []int) {
+	if len(displayStringsArr) == 0 {
+		return []string{}, nil
+	}
+
 	displayStringsArr, columnAlignments, removedColumns := excludeBlankColumns(displayStringsArr, columnAlignments)
 	padWidths := getPadWidths(displayStringsArr)
 	columnConfigs := make([]ColumnConfig, len(padWidths))
@@ -183,9 +186,8 @@ func TruncateWithEllipsis(str string, limit int) string {
 func SafeTruncate(str string, limit int) string {
 	if len(str) > limit {
 		return str[0:limit]
-	} else {
-		return str
 	}
+	return str
 }
 
 const COMMIT_HASH_SHORT_SIZE = 8

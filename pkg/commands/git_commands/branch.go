@@ -4,13 +4,16 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jesseduffield/lazygit/pkg/commands/models"
 	"github.com/jesseduffield/lazygit/pkg/commands/oscommands"
 	"github.com/jesseduffield/lazygit/pkg/utils"
 	"github.com/mgutz/str"
+	"github.com/samber/lo"
 )
 
 type BranchCommands struct {
 	*GitCommon
+	allBranchesLogCmdIndex int // keeps track of current all branches log command
 }
 
 func NewBranchCommands(gitCommon *GitCommon) *BranchCommands {
@@ -23,6 +26,24 @@ func NewBranchCommands(gitCommon *GitCommon) *BranchCommands {
 func (self *BranchCommands) New(name string, base string) error {
 	cmdArgs := NewGitCmd("checkout").
 		Arg("-b", name, base).
+		ToArgv()
+
+	return self.cmd.New(cmdArgs).Run()
+}
+
+func (self *BranchCommands) NewWithoutTracking(name string, base string) error {
+	cmdArgs := NewGitCmd("checkout").
+		Arg("-b", name, base).
+		Arg("--no-track").
+		ToArgv()
+
+	return self.cmd.New(cmdArgs).Run()
+}
+
+// NewWithoutCheckout creates a new branch without checking it out
+func (self *BranchCommands) NewWithoutCheckout(name string, base string) error {
+	cmdArgs := NewGitCmd("branch").
+		Arg(name, base).
 		ToArgv()
 
 	return self.cmd.New(cmdArgs).Run()
@@ -81,26 +102,41 @@ func (self *BranchCommands) CurrentBranchInfo() (BranchInfo, error) {
 	}, nil
 }
 
-// CurrentBranchName get name of current branch
+// CurrentBranchName get name of current branch. Returns empty string if HEAD is detached.
 func (self *BranchCommands) CurrentBranchName() (string, error) {
-	cmdArgs := NewGitCmd("rev-parse").
-		Arg("--abbrev-ref").
-		Arg("--verify").
-		Arg("HEAD").
+	cmdArgs := NewGitCmd("branch").
+		Arg("--show-current").
 		ToArgv()
 
 	output, err := self.cmd.New(cmdArgs).DontLog().RunWithOutput()
-	if err == nil {
-		return strings.TrimSpace(output), nil
+	if err != nil {
+		return "", err
 	}
-	return "", err
+
+	return strings.TrimSpace(output), nil
+}
+
+// Gets the full ref name of the previously checked out branch. Can return an empty string (but no
+// error) e.g. when the previously checked out thing was a detached head.
+func (self *BranchCommands) PreviousRef() (string, error) {
+	cmdArgs := NewGitCmd("rev-parse").
+		Arg("--symbolic-full-name").
+		Arg("@{-1}").
+		ToArgv()
+
+	output, err := self.cmd.New(cmdArgs).DontLog().RunWithOutput()
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(output), nil
 }
 
 // LocalDelete delete branch locally
-func (self *BranchCommands) LocalDelete(branch string, force bool) error {
+func (self *BranchCommands) LocalDelete(branches []string, force bool) error {
 	cmdArgs := NewGitCmd("branch").
 		ArgIfElse(force, "-D", "-d").
-		Arg(branch).
+		Arg(branches...).
 		ToArgv()
 
 	return self.cmd.New(cmdArgs).Run()
@@ -133,8 +169,8 @@ func (self *BranchCommands) GetGraph(branchName string) (string, error) {
 	return self.GetGraphCmdObj(branchName).DontLog().RunWithOutput()
 }
 
-func (self *BranchCommands) GetGraphCmdObj(branchName string) oscommands.ICmdObj {
-	branchLogCmdTemplate := self.UserConfig.Git.BranchLogCmd
+func (self *BranchCommands) GetGraphCmdObj(branchName string) *oscommands.CmdObj {
+	branchLogCmdTemplate := self.UserConfig().Git.BranchLogCmd
 	templateValues := map[string]string{
 		"branchName": self.cmd.Quote(branchName),
 	}
@@ -216,19 +252,80 @@ func (self *BranchCommands) Rename(oldName string, newName string) error {
 
 type MergeOpts struct {
 	FastForwardOnly bool
+	Squash          bool
 }
 
 func (self *BranchCommands) Merge(branchName string, opts MergeOpts) error {
+	if opts.Squash && opts.FastForwardOnly {
+		panic("Squash and FastForwardOnly can't both be true")
+	}
 	cmdArgs := NewGitCmd("merge").
 		Arg("--no-edit").
-		Arg(strings.Fields(self.UserConfig.Git.Merging.Args)...).
+		Arg(strings.Fields(self.UserConfig().Git.Merging.Args)...).
 		ArgIf(opts.FastForwardOnly, "--ff-only").
+		ArgIf(opts.Squash, "--squash", "--ff").
 		Arg(branchName).
 		ToArgv()
 
 	return self.cmd.New(cmdArgs).Run()
 }
 
-func (self *BranchCommands) AllBranchesLogCmdObj() oscommands.ICmdObj {
-	return self.cmd.New(str.ToArgv(self.UserConfig.Git.AllBranchesLogCmd)).DontLog()
+// Only choose between non-empty, non-identical commands
+func (self *BranchCommands) allBranchesLogCandidates() []string {
+	return lo.Uniq(lo.WithoutEmpty(self.UserConfig().Git.AllBranchesLogCmds))
+}
+
+func (self *BranchCommands) AllBranchesLogCmdObj() *oscommands.CmdObj {
+	candidates := self.allBranchesLogCandidates()
+
+	if self.allBranchesLogCmdIndex >= len(candidates) {
+		self.allBranchesLogCmdIndex = 0
+	}
+
+	i := self.allBranchesLogCmdIndex
+	return self.cmd.New(str.ToArgv(candidates[i])).DontLog()
+}
+
+func (self *BranchCommands) RotateAllBranchesLogIdx() {
+	n := len(self.allBranchesLogCandidates())
+	i := self.allBranchesLogCmdIndex
+	self.allBranchesLogCmdIndex = (i + 1) % n
+}
+
+func (self *BranchCommands) GetAllBranchesLogIdxAndCount() (int, int) {
+	n := len(self.allBranchesLogCandidates())
+	i := self.allBranchesLogCmdIndex
+	return i, n
+}
+
+func (self *BranchCommands) IsBranchMerged(branch *models.Branch, mainBranches *MainBranches) (bool, error) {
+	branchesToCheckAgainst := []string{"HEAD"}
+	if branch.RemoteBranchStoredLocally() {
+		branchesToCheckAgainst = append(branchesToCheckAgainst, fmt.Sprintf("%s@{upstream}", branch.Name))
+	}
+	branchesToCheckAgainst = append(branchesToCheckAgainst, mainBranches.Get()...)
+
+	cmdArgs := NewGitCmd("rev-list").
+		Arg("--max-count=1").
+		Arg(branch.Name).
+		Arg(lo.Map(branchesToCheckAgainst, func(branch string, _ int) string {
+			return fmt.Sprintf("^%s", branch)
+		})...).
+		Arg("--").
+		ToArgv()
+
+	stdout, _, err := self.cmd.New(cmdArgs).DontLog().RunWithOutputs()
+	if err != nil {
+		return false, err
+	}
+
+	return stdout == "", nil
+}
+
+func (self *BranchCommands) UpdateBranchRefs(updateCommands string) error {
+	cmdArgs := NewGitCmd("update-ref").
+		Arg("--stdin").
+		ToArgv()
+
+	return self.cmd.New(cmdArgs).SetStdin(updateCommands).Run()
 }

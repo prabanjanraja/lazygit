@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"fmt"
+
 	"github.com/jesseduffield/gocui"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
 )
@@ -22,10 +24,10 @@ func NewGlobalController(
 func (self *GlobalController) GetKeybindings(opts types.KeybindingsOpts) []*types.Binding {
 	return []*types.Binding{
 		{
-			Key:         opts.GetKey(opts.Config.Universal.ExecuteCustomCommand),
-			Handler:     self.customCommand,
-			Description: self.c.Tr.ExecuteCustomCommand,
-			Tooltip:     self.c.Tr.ExecuteCustomCommandTooltip,
+			Key:         opts.GetKey(opts.Config.Universal.ExecuteShellCommand),
+			Handler:     self.shellCommand,
+			Description: self.c.Tr.ExecuteShellCommand,
+			Tooltip:     self.c.Tr.ExecuteShellCommandTooltip,
 			OpensMenu:   true,
 		},
 		{
@@ -35,27 +37,44 @@ func (self *GlobalController) GetKeybindings(opts types.KeybindingsOpts) []*type
 			OpensMenu:   true,
 		},
 		{
-			Key:         opts.GetKey(opts.Config.Universal.CreateRebaseOptionsMenu),
-			Handler:     self.c.Helpers().MergeAndRebase.CreateRebaseOptionsMenu,
-			Description: self.c.Tr.ViewMergeRebaseOptions,
-			Tooltip:     self.c.Tr.ViewMergeRebaseOptionsTooltip,
-			OpensMenu:   true,
+			Key:               opts.GetKey(opts.Config.Universal.CreateRebaseOptionsMenu),
+			Handler:           opts.Guards.NoPopupPanel(self.c.Helpers().MergeAndRebase.CreateRebaseOptionsMenu),
+			Description:       self.c.Tr.ViewMergeRebaseOptions,
+			Tooltip:           self.c.Tr.ViewMergeRebaseOptionsTooltip,
+			OpensMenu:         true,
+			GetDisabledReason: self.canShowRebaseOptions,
 		},
 		{
 			Key:         opts.GetKey(opts.Config.Universal.Refresh),
-			Handler:     self.refresh,
+			Handler:     opts.Guards.NoPopupPanel(self.refresh),
 			Description: self.c.Tr.Refresh,
 			Tooltip:     self.c.Tr.RefreshTooltip,
 		},
 		{
 			Key:         opts.GetKey(opts.Config.Universal.NextScreenMode),
-			Handler:     self.nextScreenMode,
+			Handler:     opts.Guards.NoPopupPanel(self.nextScreenMode),
 			Description: self.c.Tr.NextScreenMode,
 		},
 		{
 			Key:         opts.GetKey(opts.Config.Universal.PrevScreenMode),
-			Handler:     self.prevScreenMode,
+			Handler:     opts.Guards.NoPopupPanel(self.prevScreenMode),
 			Description: self.c.Tr.PrevScreenMode,
+		},
+		{
+			Key:               opts.GetKey(opts.Config.Universal.CyclePagers),
+			Handler:           opts.Guards.NoPopupPanel(self.cyclePagers),
+			GetDisabledReason: self.canCyclePagers,
+			Description:       self.c.Tr.CyclePagers,
+			Tooltip:           self.c.Tr.CyclePagersTooltip,
+		},
+		{
+			Key:               opts.GetKey(opts.Config.Universal.Return),
+			Modifier:          gocui.ModNone,
+			Handler:           self.escape,
+			Description:       self.c.Tr.Cancel,
+			DescriptionFunc:   self.escapeDescription,
+			GetDisabledReason: self.escapeEnabled,
+			DisplayOnScreen:   true,
 		},
 		{
 			ViewName:  "",
@@ -69,29 +88,30 @@ func (self *GlobalController) GetKeybindings(opts types.KeybindingsOpts) []*type
 			Modifier: gocui.ModNone,
 			// we have the description on the alt key and not the main key for legacy reasons
 			// (the original main key was 'x' but we've reassigned that to other purposes)
-			Description:      self.c.Tr.OpenKeybindingsMenu,
-			Handler:          self.createOptionsMenu,
-			ShortDescription: self.c.Tr.Keybindings,
-			DisplayOnScreen:  true,
+			Description:       self.c.Tr.OpenKeybindingsMenu,
+			Handler:           self.createOptionsMenu,
+			ShortDescription:  self.c.Tr.Keybindings,
+			DisplayOnScreen:   true,
+			GetDisabledReason: self.optionsMenuDisabledReason,
 		},
 		{
 			ViewName:    "",
 			Key:         opts.GetKey(opts.Config.Universal.FilteringMenu),
-			Handler:     self.createFilteringMenu,
+			Handler:     opts.Guards.NoPopupPanel(self.createFilteringMenu),
 			Description: self.c.Tr.OpenFilteringMenu,
 			Tooltip:     self.c.Tr.OpenFilteringMenuTooltip,
 			OpensMenu:   true,
 		},
 		{
 			Key:         opts.GetKey(opts.Config.Universal.DiffingMenu),
-			Handler:     self.createDiffingMenu,
+			Handler:     opts.Guards.NoPopupPanel(self.createDiffingMenu),
 			Description: self.c.Tr.ViewDiffingOptions,
 			Tooltip:     self.c.Tr.ViewDiffingOptionsTooltip,
 			OpensMenu:   true,
 		},
 		{
 			Key:         opts.GetKey(opts.Config.Universal.DiffingMenuAlt),
-			Handler:     self.createDiffingMenu,
+			Handler:     opts.Guards.NoPopupPanel(self.createDiffingMenu),
 			Description: self.c.Tr.ViewDiffingOptions,
 			Tooltip:     self.c.Tr.ViewDiffingOptionsTooltip,
 			OpensMenu:   true,
@@ -113,11 +133,18 @@ func (self *GlobalController) GetKeybindings(opts types.KeybindingsOpts) []*type
 			Handler:  self.quitWithoutChangingDirectory,
 		},
 		{
-			Key:             opts.GetKey(opts.Config.Universal.Return),
-			Modifier:        gocui.ModNone,
-			Handler:         self.escape,
-			Description:     self.c.Tr.Cancel,
-			DisplayOnScreen: true,
+			Key:         opts.GetKey(opts.Config.Universal.SuspendApp),
+			Modifier:    gocui.ModNone,
+			Handler:     self.c.Helpers().SuspendResume.SuspendApp,
+			Description: self.c.Tr.SuspendApp,
+			GetDisabledReason: func() *types.DisabledReason {
+				if !self.c.Helpers().SuspendResume.CanSuspendApp() {
+					return &types.DisabledReason{
+						Text: self.c.Tr.CannotSuspendApp,
+					}
+				}
+				return nil
+			},
 		},
 		{
 			Key:         opts.GetKey(opts.Config.Universal.ToggleWhitespaceInDiffView),
@@ -132,8 +159,8 @@ func (self *GlobalController) Context() types.Context {
 	return nil
 }
 
-func (self *GlobalController) customCommand() error {
-	return (&CustomCommandAction{c: self.c}).Call()
+func (self *GlobalController) shellCommand() error {
+	return (&ShellCommandAction{c: self.c}).Call()
 }
 
 func (self *GlobalController) createCustomPatchOptionsMenu() error {
@@ -141,7 +168,8 @@ func (self *GlobalController) createCustomPatchOptionsMenu() error {
 }
 
 func (self *GlobalController) refresh() error {
-	return self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
+	self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
+	return nil
 }
 
 func (self *GlobalController) nextScreenMode() error {
@@ -152,8 +180,40 @@ func (self *GlobalController) prevScreenMode() error {
 	return (&ScreenModeActions{c: self.c}).Prev()
 }
 
+func (self *GlobalController) cyclePagers() error {
+	self.c.State().GetPagerConfig().CyclePagers()
+	if self.c.Context().CurrentSide().GetKey() == self.c.Context().Current().GetKey() {
+		self.c.Context().CurrentSide().HandleFocus(types.OnFocusOpts{})
+	}
+
+	current, total := self.c.State().GetPagerConfig().CurrentPagerIndex()
+	self.c.Toast(fmt.Sprintf("Selected pager %d of %d", current+1, total))
+	return nil
+}
+
+func (self *GlobalController) canCyclePagers() *types.DisabledReason {
+	_, total := self.c.State().GetPagerConfig().CurrentPagerIndex()
+	if total <= 1 {
+		return &types.DisabledReason{
+			Text: self.c.Tr.CyclePagersDisabledReason,
+		}
+	}
+	return nil
+}
+
 func (self *GlobalController) createOptionsMenu() error {
 	return (&OptionsMenuAction{c: self.c}).Call()
+}
+
+func (self *GlobalController) optionsMenuDisabledReason() *types.DisabledReason {
+	ctx := self.c.Context().Current()
+	// Don't show options menu while displaying popup.
+	if ctx.GetKind() == types.PERSISTENT_POPUP || ctx.GetKind() == types.TEMPORARY_POPUP {
+		// The empty error text is intentional. We don't want to show an error
+		// toast for this, but only hide it from the options map.
+		return &types.DisabledReason{Text: ""}
+	}
+	return nil
 }
 
 func (self *GlobalController) createFilteringMenu() error {
@@ -176,6 +236,29 @@ func (self *GlobalController) escape() error {
 	return (&QuitActions{c: self.c}).Escape()
 }
 
+func (self *GlobalController) escapeDescription() string {
+	return (&QuitActions{c: self.c}).EscapeDescription()
+}
+
+func (self *GlobalController) escapeEnabled() *types.DisabledReason {
+	if (&QuitActions{c: self.c}).EscapeEnabled() {
+		return nil
+	}
+
+	// The empty error text is intentional. We don't want to show an error
+	// toast for this, but only hide it from the options map.
+	return &types.DisabledReason{Text: ""}
+}
+
 func (self *GlobalController) toggleWhitespace() error {
 	return (&ToggleWhitespaceAction{c: self.c}).Call()
+}
+
+func (self *GlobalController) canShowRebaseOptions() *types.DisabledReason {
+	if self.c.Model().WorkingTreeStateAtLastCommitRefresh.None() {
+		return &types.DisabledReason{
+			Text: self.c.Tr.NotMergingOrRebasing,
+		}
+	}
+	return nil
 }

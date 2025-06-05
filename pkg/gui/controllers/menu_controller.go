@@ -18,7 +18,7 @@ func NewMenuController(
 ) *MenuController {
 	return &MenuController{
 		baseController: baseController{},
-		ListControllerTrait: NewListControllerTrait[*types.MenuItem](
+		ListControllerTrait: NewListControllerTrait(
 			c,
 			c.Contexts().Menu,
 			c.Contexts().Menu.GetSelected,
@@ -38,7 +38,7 @@ func (self *MenuController) GetKeybindings(opts types.KeybindingsOpts) []*types.
 			GetDisabledReason: self.require(self.singleItemSelected()),
 		},
 		{
-			Key:               opts.GetKey(opts.Config.Universal.Confirm),
+			Key:               opts.GetKey(opts.Config.Universal.ConfirmMenu),
 			Handler:           self.withItem(self.press),
 			GetDisabledReason: self.require(self.singleItemSelected()),
 			Description:       self.c.Tr.Execute,
@@ -47,7 +47,7 @@ func (self *MenuController) GetKeybindings(opts types.KeybindingsOpts) []*types.
 		{
 			Key:             opts.GetKey(opts.Config.Universal.Return),
 			Handler:         self.close,
-			Description:     self.c.Tr.Close,
+			Description:     self.c.Tr.CloseCancel,
 			DisplayOnScreen: true,
 		},
 	}
@@ -59,13 +59,12 @@ func (self *MenuController) GetOnClick() func() error {
 	return self.withItemGraceful(self.press)
 }
 
-func (self *MenuController) GetOnFocus() func(types.OnFocusOpts) error {
-	return func(types.OnFocusOpts) error {
+func (self *MenuController) GetOnFocus() func(types.OnFocusOpts) {
+	return func(types.OnFocusOpts) {
 		selectedMenuItem := self.context().GetSelected()
 		if selectedMenuItem != nil {
 			self.c.Views().Tooltip.SetContent(self.c.Helpers().Confirmation.TooltipForMenuItem(selectedMenuItem))
 		}
-		return nil
 	}
 }
 
@@ -79,7 +78,8 @@ func (self *MenuController) close() error {
 		return nil
 	}
 
-	return self.c.PopContext()
+	self.c.Context().Pop()
+	return nil
 }
 
 func (self *MenuController) context() *context.MenuContext {

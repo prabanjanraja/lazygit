@@ -40,17 +40,17 @@ func NewSubCommitsContext(
 
 	getDisplayStrings := func(startIdx int, endIdx int) [][]string {
 		// This can happen if a sub-commits view is asked to be rerendered while
-		// it is invisble; for example when switching screen modes, which
+		// it is invisible; for example when switching screen modes, which
 		// rerenders all views.
 		if viewModel.GetRef() == nil {
 			return [][]string{}
 		}
 
-		selectedCommitHash := ""
-		if c.CurrentContext().GetKey() == SUB_COMMITS_CONTEXT_KEY {
+		var selectedCommitHashPtr *string
+		if c.Context().Current().GetKey() == SUB_COMMITS_CONTEXT_KEY {
 			selectedCommit := viewModel.GetSelected()
 			if selectedCommit != nil {
-				selectedCommitHash = selectedCommit.Hash
+				selectedCommitHashPtr = selectedCommit.HashPtr()
 			}
 		}
 		branches := []*models.Branch{}
@@ -68,16 +68,15 @@ func NewSubCommitsContext(
 			c.Modes().CherryPicking.SelectedHashSet(),
 			c.Modes().Diffing.Ref,
 			"",
-			c.UserConfig.Gui.TimeFormat,
-			c.UserConfig.Gui.ShortTimeFormat,
+			c.UserConfig().Gui.TimeFormat,
+			c.UserConfig().Gui.ShortTimeFormat,
 			time.Now(),
-			c.UserConfig.Git.ParseEmoji,
-			selectedCommitHash,
+			c.UserConfig().Git.ParseEmoji,
+			selectedCommitHashPtr,
 			startIdx,
 			endIdx,
 			shouldShowGraph(c),
 			git_commands.NewNullBisectInfo(),
-			false,
 		)
 	}
 
@@ -142,7 +141,7 @@ func NewSubCommitsContext(
 
 type SubCommitsViewModel struct {
 	// name of the ref that the sub-commits are shown for
-	ref                     types.Ref
+	ref                     models.Ref
 	refToShowDivergenceFrom string
 	*ListViewModel[*models.Commit]
 
@@ -150,11 +149,11 @@ type SubCommitsViewModel struct {
 	showBranchHeads bool
 }
 
-func (self *SubCommitsViewModel) SetRef(ref types.Ref) {
+func (self *SubCommitsViewModel) SetRef(ref models.Ref) {
 	self.ref = ref
 }
 
-func (self *SubCommitsViewModel) GetRef() types.Ref {
+func (self *SubCommitsViewModel) GetRef() models.Ref {
 	return self.ref
 }
 
@@ -178,12 +177,25 @@ func (self *SubCommitsContext) CanRebase() bool {
 	return false
 }
 
-func (self *SubCommitsContext) GetSelectedRef() types.Ref {
+func (self *SubCommitsContext) GetSelectedRef() models.Ref {
 	commit := self.GetSelected()
 	if commit == nil {
 		return nil
 	}
 	return commit
+}
+
+func (self *SubCommitsContext) GetSelectedRefRangeForDiffFiles() *types.RefRange {
+	commits, startIdx, endIdx := self.GetSelectedItems()
+	if commits == nil || startIdx == endIdx {
+		return nil
+	}
+	from := commits[len(commits)-1]
+	to := commits[0]
+	if from.Divergence != to.Divergence {
+		return nil
+	}
+	return &types.RefRange{From: from, To: to}
 }
 
 func (self *SubCommitsContext) GetCommits() []*models.Commit {
@@ -204,6 +216,31 @@ func (self *SubCommitsContext) GetDiffTerminals() []string {
 	return []string{itemId}
 }
 
+func (self *SubCommitsContext) RefForAdjustingLineNumberInDiff() string {
+	commits, _, _ := self.GetSelectedItems()
+	if commits == nil {
+		return ""
+	}
+	return commits[0].Hash()
+}
+
 func (self *SubCommitsContext) ModelSearchResults(searchStr string, caseSensitive bool) []gocui.SearchPosition {
-	return searchModelCommits(caseSensitive, self.GetCommits(), self.ColumnPositions(), searchStr)
+	return searchModelCommits(caseSensitive, self.GetCommits(), self.ColumnPositions(), self.ModelIndexToViewIndex, searchStr)
+}
+
+func (self *SubCommitsContext) IndexForGotoBottom() int {
+	commits := self.GetCommits()
+	selectedIdx := self.GetSelectedLineIdx()
+	if selectedIdx >= 0 && selectedIdx < len(commits)-1 {
+		if commits[selectedIdx+1].Status != models.StatusMerged {
+			_, idx, found := lo.FindIndexOf(commits, func(c *models.Commit) bool {
+				return c.Status == models.StatusMerged
+			})
+			if found {
+				return idx - 1
+			}
+		}
+	}
+
+	return self.list.Len() - 1
 }

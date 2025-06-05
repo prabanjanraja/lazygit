@@ -1,36 +1,38 @@
 package git_commands
 
 import (
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/jesseduffield/lazygit/pkg/commands/oscommands"
+	"github.com/jesseduffield/lazygit/pkg/common"
 	"github.com/jesseduffield/lazygit/pkg/utils"
 	"github.com/samber/lo"
 	"github.com/sasha-s/go-deadlock"
 )
 
 type MainBranches struct {
-	// List of main branches configured by the user. Just the bare names.
-	configuredMainBranches []string
-	// Which of these actually exist in the repository. Full ref names, and it
-	// could be either "refs/heads/..." or "refs/remotes/origin/..." depending
-	// on which one exists for a given bare name.
+	c *common.Common
+	// Which of the configured main branches actually exist in the repository. Full
+	// ref names, and it could be either "refs/heads/..." or "refs/remotes/origin/..."
+	// depending on which one exists for a given bare name.
 	existingMainBranches []string
 
+	previousMainBranches []string
+
 	cmd   oscommands.ICmdObjBuilder
-	mutex *deadlock.Mutex
+	mutex deadlock.Mutex
 }
 
 func NewMainBranches(
-	configuredMainBranches []string,
+	cmn *common.Common,
 	cmd oscommands.ICmdObjBuilder,
 ) *MainBranches {
 	return &MainBranches{
-		configuredMainBranches: configuredMainBranches,
-		existingMainBranches:   nil,
-		cmd:                    cmd,
-		mutex:                  &deadlock.Mutex{},
+		c:                    cmn,
+		existingMainBranches: nil,
+		cmd:                  cmd,
 	}
 }
 
@@ -40,8 +42,11 @@ func (self *MainBranches) Get() []string {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 
-	if self.existingMainBranches == nil {
-		self.existingMainBranches = self.determineMainBranches()
+	configuredMainBranches := self.c.UserConfig().Git.MainBranches
+
+	if self.existingMainBranches == nil || !slices.Equal(self.previousMainBranches, configuredMainBranches) {
+		self.existingMainBranches = self.determineMainBranches(configuredMainBranches)
+		self.previousMainBranches = configuredMainBranches
 	}
 
 	return self.existingMainBranches
@@ -64,20 +69,20 @@ func (self *MainBranches) GetMergeBase(refName string) string {
 	// very rarely, users must quit and restart lazygit to fix it; the latter is
 	// also not very common, but can totally happen and is not an error.
 
-	output, _ := self.cmd.New(
+	output, _, _ := self.cmd.New(
 		NewGitCmd("merge-base").Arg(refName).Arg(mainBranches...).
 			ToArgv(),
-	).DontLog().RunWithOutput()
-	return ignoringWarnings(output)
+	).DontLog().RunWithOutputs()
+	return strings.TrimSpace(output)
 }
 
-func (self *MainBranches) determineMainBranches() []string {
+func (self *MainBranches) determineMainBranches(configuredMainBranches []string) []string {
 	var existingBranches []string
 	var wg sync.WaitGroup
 
-	existingBranches = make([]string, len(self.configuredMainBranches))
+	existingBranches = make([]string, len(configuredMainBranches))
 
-	for i, branchName := range self.configuredMainBranches {
+	for i, branchName := range configuredMainBranches {
 		wg.Add(1)
 		go utils.Safe(func() {
 			defer wg.Done()

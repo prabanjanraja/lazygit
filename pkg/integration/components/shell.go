@@ -142,6 +142,10 @@ func (self *Shell) NewBranchFrom(name string, from string) *Shell {
 	return self.RunCommand([]string{"git", "checkout", "-b", name, from})
 }
 
+func (self *Shell) RenameCurrentBranch(newName string) *Shell {
+	return self.RunCommand([]string{"git", "branch", "-m", newName})
+}
+
 func (self *Shell) Checkout(name string) *Shell {
 	return self.RunCommand([]string{"git", "checkout", name})
 }
@@ -166,8 +170,16 @@ func (self *Shell) Commit(message string) *Shell {
 	return self.RunCommand([]string{"git", "commit", "-m", message})
 }
 
+func (self *Shell) CommitInWorktreeOrSubmodule(worktreePath string, message string) *Shell {
+	return self.RunCommand([]string{"git", "-C", worktreePath, "commit", "-m", message})
+}
+
 func (self *Shell) EmptyCommit(message string) *Shell {
 	return self.RunCommand([]string{"git", "commit", "--allow-empty", "-m", message})
+}
+
+func (self *Shell) EmptyCommitWithBody(subject string, body string) *Shell {
+	return self.RunCommand([]string{"git", "commit", "--allow-empty", "-m", subject, "-m", body})
 }
 
 func (self *Shell) EmptyCommitDaysAgo(message string, daysAgo int) *Shell {
@@ -184,6 +196,10 @@ func (self *Shell) EmptyCommitWithDate(message string, date string) *Shell {
 
 func (self *Shell) Revert(ref string) *Shell {
 	return self.RunCommand([]string{"git", "revert", ref})
+}
+
+func (self *Shell) AssertRemoteTagNotFound(upstream, name string) *Shell {
+	return self.RunCommandExpectError([]string{"git", "ls-remote", "--exit-code", upstream, fmt.Sprintf("refs/tags/%s", name)})
 }
 
 func (self *Shell) CreateLightweightTag(name string, ref string) *Shell {
@@ -223,6 +239,10 @@ func (self *Shell) DeleteFileAndAdd(fileName string) *Shell {
 		GitAdd(fileName)
 }
 
+func (self *Shell) RenameFileInGit(oldName string, newName string) *Shell {
+	return self.RunCommand([]string{"git", "mv", oldName, newName})
+}
+
 // creates commits 01, 02, 03, ..., n with a new file in each
 // The reason for padding with zeroes is so that it's easier to do string
 // matches on the commit messages when there are many of them
@@ -245,7 +265,7 @@ func (self *Shell) CreateNCommitsStartingAt(n, startIndex int) *Shell {
 // Only to be used in demos, because the list might change and we don't want
 // tests to break when it does.
 func (self *Shell) CreateNCommitsWithRandomMessages(n int) *Shell {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		file := RandomFiles[i]
 		self.CreateFileAndAdd(
 			file.Name,
@@ -274,7 +294,7 @@ func (self *Shell) CreateRepoHistory() *Shell {
 	totalCommits := 0
 
 	// Generate commits
-	for i := 0; i < numInitialCommits; i++ {
+	for i := range numInitialCommits {
 		author := authors[i%numAuthors]
 		commitMessage := RandomCommitMessages[totalCommits%len(RandomCommitMessages)]
 
@@ -284,7 +304,7 @@ func (self *Shell) CreateRepoHistory() *Shell {
 	}
 
 	// Generate branches and merges
-	for i := 0; i < numBranches; i++ {
+	for i := range numBranches {
 		// We'll have one author creating all the commits in the branch
 		author := authors[i%numAuthors]
 		branchName := RandomBranchNames[i%len(RandomBranchNames)]
@@ -297,7 +317,7 @@ func (self *Shell) CreateRepoHistory() *Shell {
 		self.NewBranchFrom(branchName, fmt.Sprintf("master~%d", commitOffset))
 
 		numCommitsInBranch := rand.Intn(maxCommitsPerBranch) + 1
-		for j := 0; j < numCommitsInBranch; j++ {
+		for range numCommitsInBranch {
 			commitMessage := RandomCommitMessages[totalCommits%len(RandomCommitMessages)]
 
 			self.SetAuthor(author, "")
@@ -348,8 +368,8 @@ func (self *Shell) CloneIntoRemote(name string) *Shell {
 }
 
 func (self *Shell) CloneIntoSubmodule(submoduleName string, submodulePath string) *Shell {
-	self.Clone("other_repo")
-	self.RunCommand([]string{"git", "submodule", "add", "--name", submoduleName, "../other_repo", submodulePath})
+	self.Clone(submoduleName)
+	self.RunCommand([]string{"git", "submodule", "add", "--name", submoduleName, "../" + submoduleName, submodulePath})
 
 	return self
 }
@@ -412,11 +432,21 @@ func (self *Shell) AddWorktreeCheckout(base string, path string) *Shell {
 	})
 }
 
-func (self *Shell) AddFileInWorktree(worktreePath string) *Shell {
-	self.CreateFile(filepath.Join(worktreePath, "content"), "content")
+func (self *Shell) AddFileInWorktreeOrSubmodule(worktreePath string, filePath string, content string) *Shell {
+	self.CreateFile(filepath.Join(worktreePath, filePath), content)
 
 	self.RunCommand([]string{
-		"git", "-C", worktreePath, "add", "content",
+		"git", "-C", worktreePath, "add", filePath,
+	})
+
+	return self
+}
+
+func (self *Shell) UpdateFileInWorktreeOrSubmodule(worktreePath string, filePath string, content string) *Shell {
+	self.UpdateFile(filepath.Join(worktreePath, filePath), content)
+
+	self.RunCommand([]string{
+		"git", "-C", worktreePath, "add", filePath,
 	})
 
 	return self

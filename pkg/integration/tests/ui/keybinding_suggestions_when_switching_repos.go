@@ -13,7 +13,7 @@ var KeybindingSuggestionsWhenSwitchingRepos = NewIntegrationTest(NewIntegrationT
 	Skip:         false,
 	SetupConfig: func(config *config.AppConfig) {
 		otherRepo, _ := filepath.Abs("../other")
-		config.AppState.RecentRepos = []string{otherRepo}
+		config.GetAppState().RecentRepos = []string{otherRepo}
 	},
 	SetupRepo: func(shell *Shell) {
 		shell.CloneNonBare("other")
@@ -31,12 +31,12 @@ var KeybindingSuggestionsWhenSwitchingRepos = NewIntegrationTest(NewIntegrationT
 
 		t.Views().Files().Focus()
 		t.Views().Options().Content(
-			Equals("Commit: c | Stash: s | Reset: D | Keybindings: ? | Cancel: <esc>"))
+			Equals("Commit: c | Stash: s | Reset: D | Keybindings: ?"))
 
 		switchToRepo("other")
 		switchToRepo("repo")
 
 		t.Views().Options().Content(
-			Equals("Commit: c | Stash: s | Reset: D | Keybindings: ? | Cancel: <esc>"))
+			Equals("Commit: c | Stash: s | Reset: D | Keybindings: ?"))
 	},
 })

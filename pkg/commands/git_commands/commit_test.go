@@ -33,7 +33,7 @@ func TestCommitRewordCommit(t *testing.T) {
 		t.Run(s.testName, func(t *testing.T) {
 			instance := buildCommitCommands(commonDeps{runner: s.runner})
 
-			assert.NoError(t, instance.RewordLastCommit(s.summary, s.description))
+			assert.NoError(t, instance.RewordLastCommit(s.summary, s.description).Run())
 			s.runner.CheckForMissingCalls()
 		})
 	}
@@ -53,6 +53,7 @@ func TestCommitCommitCmdObj(t *testing.T) {
 	type scenario struct {
 		testName             string
 		summary              string
+		forceSkipHooks       bool
 		description          string
 		configSignoff        bool
 		configSkipHookPrefix string
@@ -63,20 +64,39 @@ func TestCommitCommitCmdObj(t *testing.T) {
 		{
 			testName:             "Commit",
 			summary:              "test",
+			forceSkipHooks:       false,
 			configSignoff:        false,
 			configSkipHookPrefix: "",
 			expectedArgs:         []string{"commit", "-m", "test"},
 		},
 		{
-			testName:             "Commit with --no-verify flag",
+			testName:             "Commit with --no-verify flag < only prefix",
 			summary:              "WIP: test",
+			forceSkipHooks:       false,
 			configSignoff:        false,
 			configSkipHookPrefix: "WIP",
 			expectedArgs:         []string{"commit", "--no-verify", "-m", "WIP: test"},
 		},
 		{
+			testName:             "Commit with --no-verify flag < skip flag and prefix",
+			summary:              "WIP: test",
+			forceSkipHooks:       true,
+			configSignoff:        false,
+			configSkipHookPrefix: "WIP",
+			expectedArgs:         []string{"commit", "--no-verify", "-m", "WIP: test"},
+		},
+		{
+			testName:             "Commit with --no-verify flag < skip flag no prefix",
+			summary:              "test",
+			forceSkipHooks:       true,
+			configSignoff:        false,
+			configSkipHookPrefix: "WIP",
+			expectedArgs:         []string{"commit", "--no-verify", "-m", "test"},
+		},
+		{
 			testName:             "Commit with multiline message",
 			summary:              "line1",
+			forceSkipHooks:       false,
 			description:          "line2",
 			configSignoff:        false,
 			configSkipHookPrefix: "",
@@ -85,6 +105,7 @@ func TestCommitCommitCmdObj(t *testing.T) {
 		{
 			testName:             "Commit with signoff",
 			summary:              "test",
+			forceSkipHooks:       false,
 			configSignoff:        true,
 			configSkipHookPrefix: "",
 			expectedArgs:         []string{"commit", "--signoff", "-m", "test"},
@@ -92,6 +113,7 @@ func TestCommitCommitCmdObj(t *testing.T) {
 		{
 			testName:             "Commit with signoff and no-verify",
 			summary:              "WIP: test",
+			forceSkipHooks:       true,
 			configSignoff:        true,
 			configSkipHookPrefix: "WIP",
 			expectedArgs:         []string{"commit", "--no-verify", "--signoff", "-m", "WIP: test"},
@@ -107,7 +129,7 @@ func TestCommitCommitCmdObj(t *testing.T) {
 			runner := oscommands.NewFakeRunner(t).ExpectGitArgs(s.expectedArgs, "", nil)
 			instance := buildCommitCommands(commonDeps{userConfig: userConfig, runner: runner})
 
-			assert.NoError(t, instance.CommitCmdObj(s.summary, s.description).Run())
+			assert.NoError(t, instance.CommitCmdObj(s.summary, s.description, s.forceSkipHooks).Run())
 			runner.CheckForMissingCalls()
 		})
 	}
@@ -228,72 +250,98 @@ func TestCommitCreateAmendCommit(t *testing.T) {
 
 func TestCommitShowCmdObj(t *testing.T) {
 	type scenario struct {
-		testName         string
-		filterPath       string
-		contextSize      int
-		ignoreWhitespace bool
-		extDiffCmd       string
-		expected         []string
+		testName            string
+		filterPaths         []string
+		contextSize         uint64
+		similarityThreshold int
+		ignoreWhitespace    bool
+		pagerConfig         *config.PagingConfig
+		expected            []string
 	}
 
 	scenarios := []scenario{
 		{
-			testName:         "Default case without filter path",
-			filterPath:       "",
-			contextSize:      3,
-			ignoreWhitespace: false,
-			extDiffCmd:       "",
-			expected:         []string{"-C", "/path/to/worktree", "-c", "diff.noprefix=false", "show", "--no-ext-diff", "--submodule", "--color=always", "--unified=3", "--stat", "--decorate", "-p", "1234567890"},
+			testName:            "Default case without filter path",
+			filterPaths:         []string{},
+			contextSize:         3,
+			similarityThreshold: 50,
+			ignoreWhitespace:    false,
+			pagerConfig:         nil,
+			expected:            []string{"-C", "/path/to/worktree", "-c", "diff.noprefix=false", "show", "--no-ext-diff", "--submodule", "--color=always", "--unified=3", "--stat", "--decorate", "-p", "1234567890", "--find-renames=50%", "--"},
 		},
 		{
-			testName:         "Default case with filter path",
-			filterPath:       "file.txt",
-			contextSize:      3,
-			ignoreWhitespace: false,
-			extDiffCmd:       "",
-			expected:         []string{"-C", "/path/to/worktree", "-c", "diff.noprefix=false", "show", "--no-ext-diff", "--submodule", "--color=always", "--unified=3", "--stat", "--decorate", "-p", "1234567890", "--", "file.txt"},
+			testName:            "Default case with filter path",
+			filterPaths:         []string{"file.txt"},
+			contextSize:         3,
+			similarityThreshold: 50,
+			ignoreWhitespace:    false,
+			pagerConfig:         nil,
+			expected:            []string{"-C", "/path/to/worktree", "-c", "diff.noprefix=false", "show", "--no-ext-diff", "--submodule", "--color=always", "--unified=3", "--stat", "--decorate", "-p", "1234567890", "--find-renames=50%", "--", "file.txt"},
 		},
 		{
-			testName:         "Show diff with custom context size",
-			filterPath:       "",
-			contextSize:      77,
-			ignoreWhitespace: false,
-			extDiffCmd:       "",
-			expected:         []string{"-C", "/path/to/worktree", "-c", "diff.noprefix=false", "show", "--no-ext-diff", "--submodule", "--color=always", "--unified=77", "--stat", "--decorate", "-p", "1234567890"},
+			testName:            "Show diff with custom context size",
+			filterPaths:         []string{},
+			contextSize:         77,
+			similarityThreshold: 50,
+			ignoreWhitespace:    false,
+			pagerConfig:         nil,
+			expected:            []string{"-C", "/path/to/worktree", "-c", "diff.noprefix=false", "show", "--no-ext-diff", "--submodule", "--color=always", "--unified=77", "--stat", "--decorate", "-p", "1234567890", "--find-renames=50%", "--"},
 		},
 		{
-			testName:         "Show diff, ignoring whitespace",
-			filterPath:       "",
-			contextSize:      77,
-			ignoreWhitespace: true,
-			extDiffCmd:       "",
-			expected:         []string{"-C", "/path/to/worktree", "-c", "diff.noprefix=false", "show", "--no-ext-diff", "--submodule", "--color=always", "--unified=77", "--stat", "--decorate", "-p", "1234567890", "--ignore-all-space"},
+			testName:            "Show diff with custom similarity threshold",
+			filterPaths:         []string{},
+			contextSize:         3,
+			similarityThreshold: 33,
+			ignoreWhitespace:    false,
+			pagerConfig:         nil,
+			expected:            []string{"-C", "/path/to/worktree", "-c", "diff.noprefix=false", "show", "--no-ext-diff", "--submodule", "--color=always", "--unified=3", "--stat", "--decorate", "-p", "1234567890", "--find-renames=33%", "--"},
 		},
 		{
-			testName:         "Show diff with external diff command",
-			filterPath:       "",
-			contextSize:      3,
-			ignoreWhitespace: false,
-			extDiffCmd:       "difft --color=always",
-			expected:         []string{"-C", "/path/to/worktree", "-c", "diff.external=difft --color=always", "-c", "diff.noprefix=false", "show", "--ext-diff", "--submodule", "--color=always", "--unified=3", "--stat", "--decorate", "-p", "1234567890"},
+			testName:            "Show diff, ignoring whitespace",
+			filterPaths:         []string{},
+			contextSize:         77,
+			similarityThreshold: 50,
+			ignoreWhitespace:    true,
+			pagerConfig:         nil,
+			expected:            []string{"-C", "/path/to/worktree", "-c", "diff.noprefix=false", "show", "--no-ext-diff", "--submodule", "--color=always", "--unified=77", "--stat", "--decorate", "-p", "1234567890", "--ignore-all-space", "--find-renames=50%", "--"},
+		},
+		{
+			testName:            "Show diff with external diff command",
+			filterPaths:         []string{},
+			contextSize:         3,
+			similarityThreshold: 50,
+			ignoreWhitespace:    false,
+			pagerConfig:         &config.PagingConfig{ExternalDiffCommand: "difft --color=always"},
+			expected:            []string{"-C", "/path/to/worktree", "-c", "diff.external=difft --color=always", "-c", "diff.noprefix=false", "show", "--ext-diff", "--submodule", "--color=always", "--unified=3", "--stat", "--decorate", "-p", "1234567890", "--find-renames=50%", "--"},
+		},
+		{
+			testName:            "Show diff using git's external diff config",
+			filterPaths:         []string{},
+			contextSize:         3,
+			similarityThreshold: 50,
+			ignoreWhitespace:    false,
+			pagerConfig:         &config.PagingConfig{UseExternalDiffGitConfig: true},
+			expected:            []string{"-C", "/path/to/worktree", "-c", "diff.noprefix=false", "show", "--ext-diff", "--submodule", "--color=always", "--unified=3", "--stat", "--decorate", "-p", "1234567890", "--find-renames=50%", "--"},
 		},
 	}
 
 	for _, s := range scenarios {
 		t.Run(s.testName, func(t *testing.T) {
 			userConfig := config.GetDefaultConfig()
-			userConfig.Git.Paging.ExternalDiffCommand = s.extDiffCmd
-			appState := &config.AppState{}
-			appState.IgnoreWhitespaceInDiffView = s.ignoreWhitespace
-			appState.DiffContextSize = s.contextSize
+			if s.pagerConfig != nil {
+				userConfig.Git.Pagers = []config.PagingConfig{*s.pagerConfig}
+			}
+			userConfig.Git.IgnoreWhitespaceInDiffView = s.ignoreWhitespace
+			userConfig.Git.DiffContextSize = s.contextSize
+			userConfig.Git.RenameSimilarityThreshold = s.similarityThreshold
 
 			runner := oscommands.NewFakeRunner(t).ExpectGitArgs(s.expected, "", nil)
 			repoPaths := RepoPaths{
 				worktreePath: "/path/to/worktree",
 			}
-			instance := buildCommitCommands(commonDeps{userConfig: userConfig, appState: appState, runner: runner, repoPaths: &repoPaths})
+			instance := buildCommitCommands(commonDeps{userConfig: userConfig, appState: &config.AppState{}, runner: runner, repoPaths: &repoPaths})
 
-			assert.NoError(t, instance.ShowCmdObj("1234567890", s.filterPath).Run())
+			assert.NoError(t, instance.ShowCmdObj("1234567890", s.filterPaths).Run())
 			runner.CheckForMissingCalls()
 		})
 	}

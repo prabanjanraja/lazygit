@@ -33,9 +33,9 @@ func NewReflogCommitsContext(c *ContextCommon) *ReflogCommitsContext {
 			c.Modes().CherryPicking.SelectedHashSet(),
 			c.Modes().Diffing.Ref,
 			time.Now(),
-			c.UserConfig.Gui.TimeFormat,
-			c.UserConfig.Gui.ShortTimeFormat,
-			c.UserConfig.Git.ParseEmoji,
+			c.UserConfig().Gui.TimeFormat,
+			c.UserConfig().Gui.ShortTimeFormat,
+			c.UserConfig().Git.ParseEmoji,
 		)
 	}
 
@@ -63,12 +63,17 @@ func (self *ReflogCommitsContext) CanRebase() bool {
 	return false
 }
 
-func (self *ReflogCommitsContext) GetSelectedRef() types.Ref {
+func (self *ReflogCommitsContext) GetSelectedRef() models.Ref {
 	commit := self.GetSelected()
 	if commit == nil {
 		return nil
 	}
 	return commit
+}
+
+func (self *ReflogCommitsContext) GetSelectedRefRangeForDiffFiles() *types.RefRange {
+	// It doesn't make much sense to show a range diff between two reflog entries.
+	return nil
 }
 
 func (self *ReflogCommitsContext) GetCommits() []*models.Commit {
@@ -79,6 +84,10 @@ func (self *ReflogCommitsContext) GetDiffTerminals() []string {
 	itemId := self.GetSelectedItemId()
 
 	return []string{itemId}
+}
+
+func (self *ReflogCommitsContext) RefForAdjustingLineNumberInDiff() string {
+	return self.GetSelectedItemId()
 }
 
 func (self *ReflogCommitsContext) ShowBranchHeadsInSubCommits() bool {
