@@ -90,7 +90,7 @@ var serviceDefinitions = []ServiceDefinition{
 	azdoServiceDef,
 	bitbucketServerServiceDef,
 	giteaServiceDef,
-  zohorepoServiceDef,
+	zohorepoServiceDef,
 }
 
 var defaultServiceDomains = []ServiceDomain{
