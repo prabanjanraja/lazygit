@@ -1,7 +1,6 @@
 package helpers
 
 import (
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -10,7 +9,6 @@ import (
 	"github.com/jesseduffield/gocui"
 	"github.com/jesseduffield/lazygit/pkg/commands/git_commands"
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
-	"github.com/jesseduffield/lazygit/pkg/commands/types/enums"
 	"github.com/jesseduffield/lazygit/pkg/gui/context"
 	"github.com/jesseduffield/lazygit/pkg/gui/filetree"
 	"github.com/jesseduffield/lazygit/pkg/gui/mergeconflicts"
@@ -53,14 +51,14 @@ func NewRefreshHelper(
 	}
 }
 
-func (self *RefreshHelper) Refresh(options types.RefreshOptions) error {
+func (self *RefreshHelper) Refresh(options types.RefreshOptions) {
 	if options.Mode == types.ASYNC && options.Then != nil {
 		panic("RefreshOptions.Then doesn't work with mode ASYNC")
 	}
 
 	t := time.Now()
 	defer func() {
-		self.c.Log.Infof(fmt.Sprintf("Refresh took %s", time.Since(t)))
+		self.c.Log.Infof("Refresh took %s", time.Since(t))
 	}()
 
 	if options.Scope == nil {
@@ -76,7 +74,7 @@ func (self *RefreshHelper) Refresh(options types.RefreshOptions) error {
 		)
 	}
 
-	f := func() error {
+	f := func() {
 		var scopeSet *set.Set[types.RefreshableView]
 		if len(options.Scope) == 0 {
 			// not refreshing staging/patch-building unless explicitly requested because we only need
@@ -114,7 +112,7 @@ func (self *RefreshHelper) Refresh(options types.RefreshOptions) error {
 					t := time.Now()
 					defer wg.Done()
 					f()
-					self.c.Log.Infof(fmt.Sprintf("refreshed %s in %s", name, time.Since(t)))
+					self.c.Log.Infof("refreshed %s in %s", name, time.Since(t))
 				})
 			}
 		}
@@ -127,7 +125,7 @@ func (self *RefreshHelper) Refresh(options types.RefreshOptions) error {
 			refresh("commits and commit files", self.refreshCommitsAndCommitFiles)
 
 			includeWorktreesWithBranches = scopeSet.Includes(types.WORKTREES)
-			if self.c.AppState.LocalBranchSortOrder == "recency" {
+			if self.c.UserConfig().Git.LocalBranchSortOrder == "recency" {
 				refresh("reflog and branches", func() { self.refreshReflogAndBranches(includeWorktreesWithBranches, options.KeepBranchSelectionIndex) })
 			} else {
 				refresh("branches", func() { self.refreshBranches(includeWorktreesWithBranches, options.KeepBranchSelectionIndex, true) })
@@ -158,7 +156,7 @@ func (self *RefreshHelper) Refresh(options types.RefreshOptions) error {
 		}
 
 		if scopeSet.Includes(types.STASH) {
-			refresh("stash", func() { _ = self.refreshStashEntries() })
+			refresh("stash", func() { self.refreshStashEntries() })
 		}
 
 		if scopeSet.Includes(types.TAGS) {
@@ -170,18 +168,18 @@ func (self *RefreshHelper) Refresh(options types.RefreshOptions) error {
 		}
 
 		if scopeSet.Includes(types.WORKTREES) && !includeWorktreesWithBranches {
-			refresh("worktrees", func() { _ = self.refreshWorktrees() })
+			refresh("worktrees", func() { self.refreshWorktrees() })
 		}
 
 		if scopeSet.Includes(types.STAGING) {
 			refresh("staging", func() {
 				fileWg.Wait()
-				_ = self.stagingHelper.RefreshStagingPanel(types.OnFocusOpts{})
+				self.stagingHelper.RefreshStagingPanel(types.OnFocusOpts{})
 			})
 		}
 
 		if scopeSet.Includes(types.PATCH_BUILDING) {
-			refresh("patch building", func() { _ = self.patchBuildingHelper.RefreshPatchBuildingPanel(types.OnFocusOpts{}) })
+			refresh("patch building", func() { self.patchBuildingHelper.RefreshPatchBuildingPanel(types.OnFocusOpts{}) })
 		}
 
 		if scopeSet.Includes(types.MERGE_CONFLICTS) || scopeSet.Includes(types.FILES) {
@@ -193,22 +191,19 @@ func (self *RefreshHelper) Refresh(options types.RefreshOptions) error {
 		wg.Wait()
 
 		if options.Then != nil {
-			if err := options.Then(); err != nil {
-				return err
-			}
+			options.Then()
 		}
-
-		return nil
 	}
 
 	if options.Mode == types.BLOCK_UI {
 		self.c.OnUIThread(func() error {
-			return f()
+			f()
+			return nil
 		})
-		return nil
+		return
 	}
 
-	return f()
+	f()
 }
 
 func getScopeNames(scopes []types.RefreshableView) []string {
@@ -276,8 +271,8 @@ func (self *RefreshHelper) refreshReflogAndBranches(refreshWorktrees bool, keepB
 
 func (self *RefreshHelper) refreshCommitsAndCommitFiles() {
 	_ = self.refreshCommitsWithLimit()
-	ctx, ok := self.c.Contexts().CommitFiles.GetParentContext()
-	if ok && ctx.GetKey() == context.LOCAL_COMMITS_CONTEXT_KEY {
+	ctx := self.c.Contexts().CommitFiles.GetParentContext()
+	if ctx != nil && ctx.GetKey() == context.LOCAL_COMMITS_CONTEXT_KEY {
 		// This makes sense when we've e.g. just amended a commit, meaning we get a new commit hash at the same position.
 		// However if we've just added a brand new commit, it pushes the list down by one and so we would end up
 		// showing the contents of a different commit than the one we initially entered.
@@ -286,8 +281,8 @@ func (self *RefreshHelper) refreshCommitsAndCommitFiles() {
 		// For now the awkwardness remains.
 		commit := self.c.Contexts().LocalCommits.GetSelected()
 		if commit != nil && commit.RefName() != "" {
-			self.c.Contexts().CommitFiles.SetRef(commit)
-			self.c.Contexts().CommitFiles.SetTitleRef(commit.RefName())
+			refRange := self.c.Contexts().LocalCommits.GetSelectedRefRangeForDiffFiles()
+			self.c.Contexts().CommitFiles.ReInit(commit, refRange)
 			_ = self.refreshCommitFilesContext()
 		}
 	}
@@ -310,7 +305,7 @@ func (self *RefreshHelper) determineCheckedOutBranchName() string {
 	// In all other cases, get the branch name by asking git what branch is
 	// checked out. Note that if we're on a detached head (for reasons other
 	// than rebasing or bisecting, i.e. it was explicitly checked out), then
-	// this will return its hash.
+	// this will return an empty string.
 	if branchName, err := self.c.Git().Branch.CurrentBranchName(); err == nil {
 		return branchName
 	}
@@ -334,6 +329,7 @@ func (self *RefreshHelper) refreshCommitsWithLimit() error {
 			RefForPushedStatus:   checkedOutBranchName,
 			All:                  self.c.Contexts().LocalCommits.GetShowWholeGitGraph(),
 			MainBranches:         self.c.Model().MainBranches,
+			HashPool:             self.c.Model().HashPool,
 		},
 	)
 	if err != nil {
@@ -344,7 +340,8 @@ func (self *RefreshHelper) refreshCommitsWithLimit() error {
 	self.c.Model().WorkingTreeStateAtLastCommitRefresh = self.c.Git().Status.WorkingTreeState()
 	self.c.Model().CheckedOutBranch = checkedOutBranchName
 
-	return self.refreshView(self.c.Contexts().LocalCommits)
+	self.refreshView(self.c.Contexts().LocalCommits)
+	return nil
 }
 
 func (self *RefreshHelper) refreshSubCommitsWithLimit() error {
@@ -361,6 +358,7 @@ func (self *RefreshHelper) refreshSubCommitsWithLimit() error {
 			RefToShowDivergenceFrom: self.c.Contexts().SubCommits.GetRefToShowDivergenceFrom(),
 			RefForPushedStatus:      self.c.Contexts().SubCommits.GetRef().FullRefName(),
 			MainBranches:            self.c.Model().MainBranches,
+			HashPool:                self.c.Model().HashPool,
 		},
 	)
 	if err != nil {
@@ -369,7 +367,8 @@ func (self *RefreshHelper) refreshSubCommitsWithLimit() error {
 	self.c.Model().SubCommits = commits
 	self.RefreshAuthors(commits)
 
-	return self.refreshView(self.c.Contexts().SubCommits)
+	self.refreshView(self.c.Contexts().SubCommits)
+	return nil
 }
 
 func (self *RefreshHelper) RefreshAuthors(commits []*models.Commit) {
@@ -388,9 +387,8 @@ func (self *RefreshHelper) RefreshAuthors(commits []*models.Commit) {
 }
 
 func (self *RefreshHelper) refreshCommitFilesContext() error {
-	ref := self.c.Contexts().CommitFiles.GetRef()
-	to := ref.RefName()
-	from, reverse := self.c.Modes().Diffing.GetFromAndReverseArgsForDiff(ref.ParentRefName())
+	from, to := self.c.Contexts().CommitFiles.GetFromAndToForDiff()
+	from, reverse := self.c.Modes().Diffing.GetFromAndReverseArgsForDiff(from)
 
 	files, err := self.c.Git().Loaders.CommitFileLoader.GetFilesInDiff(from, to, reverse)
 	if err != nil {
@@ -399,21 +397,23 @@ func (self *RefreshHelper) refreshCommitFilesContext() error {
 	self.c.Model().CommitFiles = files
 	self.c.Contexts().CommitFiles.CommitFileTreeViewModel.SetTree()
 
-	return self.refreshView(self.c.Contexts().CommitFiles)
+	self.refreshView(self.c.Contexts().CommitFiles)
+	return nil
 }
 
 func (self *RefreshHelper) refreshRebaseCommits() error {
 	self.c.Mutexes().LocalCommitsMutex.Lock()
 	defer self.c.Mutexes().LocalCommitsMutex.Unlock()
 
-	updatedCommits, err := self.c.Git().Loaders.CommitLoader.MergeRebasingCommits(self.c.Model().Commits)
+	updatedCommits, err := self.c.Git().Loaders.CommitLoader.MergeRebasingCommits(self.c.Model().HashPool, self.c.Model().Commits)
 	if err != nil {
 		return err
 	}
 	self.c.Model().Commits = updatedCommits
 	self.c.Model().WorkingTreeStateAtLastCommitRefresh = self.c.Git().Status.WorkingTreeState()
 
-	return self.refreshView(self.c.Contexts().LocalCommits)
+	self.refreshView(self.c.Contexts().LocalCommits)
+	return nil
 }
 
 func (self *RefreshHelper) refreshTags() error {
@@ -424,7 +424,8 @@ func (self *RefreshHelper) refreshTags() error {
 
 	self.c.Model().Tags = tags
 
-	return self.refreshView(self.c.Contexts().Tags)
+	self.refreshView(self.c.Contexts().Tags)
+	return nil
 }
 
 func (self *RefreshHelper) refreshStateSubmoduleConfigs() error {
@@ -444,16 +445,14 @@ func (self *RefreshHelper) refreshBranches(refreshWorktrees bool, keepBranchSele
 	self.c.Mutexes().RefreshingBranchesMutex.Lock()
 	defer self.c.Mutexes().RefreshingBranchesMutex.Unlock()
 
-	prevSelectedBranch := self.c.Contexts().Branches.GetSelected()
-
 	reflogCommits := self.c.Model().FilteredReflogCommits
-	if self.c.Modes().Filtering.Active() && self.c.AppState.LocalBranchSortOrder == "recency" {
+	if self.c.Modes().Filtering.Active() && self.c.UserConfig().Git.LocalBranchSortOrder == "recency" {
 		// in filter mode we filter our reflog commits to just those containing the path
 		// however we need all the reflog entries to populate the recencies of our branches
 		// which allows us to order them correctly. So if we're filtering we'll just
 		// manually load all the reflog commits here
 		var err error
-		reflogCommits, _, err = self.c.Git().Loaders.ReflogCommitLoader.GetReflogCommits(nil, "", "")
+		reflogCommits, _, err = self.c.Git().Loaders.ReflogCommitLoader.GetReflogCommits(self.c.Model().HashPool, nil, "", "")
 		if err != nil {
 			self.c.Log.Error(err)
 		}
@@ -471,9 +470,7 @@ func (self *RefreshHelper) refreshBranches(refreshWorktrees bool, keepBranchSele
 		},
 		func() {
 			self.c.OnUIThread(func() error {
-				if err := self.c.Contexts().Branches.HandleRender(); err != nil {
-					self.c.Log.Error(err)
-				}
+				self.c.Contexts().Branches.HandleRender()
 				self.refreshStatus()
 				return nil
 			})
@@ -482,16 +479,18 @@ func (self *RefreshHelper) refreshBranches(refreshWorktrees bool, keepBranchSele
 		self.c.Log.Error(err)
 	}
 
+	prevSelectedBranch := self.c.Contexts().Branches.GetSelected()
+
 	self.c.Model().Branches = branches
 
 	if refreshWorktrees {
 		self.loadWorktrees()
-		if err := self.refreshView(self.c.Contexts().Worktrees); err != nil {
-			self.c.Log.Error(err)
-		}
+		self.refreshView(self.c.Contexts().Worktrees)
 	}
 
 	if !keepBranchSelectionIndex && prevSelectedBranch != nil {
+		self.searchHelper.ReApplyFilter(self.c.Contexts().Branches)
+
 		_, idx, found := lo.FindIndexOf(self.c.Contexts().Branches.GetItems(),
 			func(b *models.Branch) bool { return b.Name == prevSelectedBranch.Name })
 		if found {
@@ -499,16 +498,12 @@ func (self *RefreshHelper) refreshBranches(refreshWorktrees bool, keepBranchSele
 		}
 	}
 
-	if err := self.refreshView(self.c.Contexts().Branches); err != nil {
-		self.c.Log.Error(err)
-	}
+	self.refreshView(self.c.Contexts().Branches)
 
 	// Need to re-render the commits view because the visualization of local
 	// branch heads might have changed
 	self.c.Mutexes().LocalCommitsMutex.Lock()
-	if err := self.c.Contexts().LocalCommits.HandleRender(); err != nil {
-		self.c.Log.Error(err)
-	}
+	self.c.Contexts().LocalCommits.HandleRender()
 	self.c.Mutexes().LocalCommitsMutex.Unlock()
 
 	self.refreshStatus()
@@ -531,14 +526,8 @@ func (self *RefreshHelper) refreshFilesAndSubmodules() error {
 	}
 
 	self.c.OnUIThread(func() error {
-		if err := self.refreshView(self.c.Contexts().Submodules); err != nil {
-			self.c.Log.Error(err)
-		}
-
-		if err := self.refreshView(self.c.Contexts().Files); err != nil {
-			self.c.Log.Error(err)
-		}
-
+		self.refreshView(self.c.Contexts().Submodules)
+		self.refreshView(self.c.Contexts().Files)
 		return nil
 	})
 
@@ -548,38 +537,42 @@ func (self *RefreshHelper) refreshFilesAndSubmodules() error {
 func (self *RefreshHelper) refreshStateFiles() error {
 	fileTreeViewModel := self.c.Contexts().Files.FileTreeViewModel
 
-	// If git thinks any of our files have inline merge conflicts, but they actually don't,
-	// we stage them.
-	// Note that if files with merge conflicts have both arisen and have been resolved
-	// between refreshes, we won't stage them here. This is super unlikely though,
-	// and this approach spares us from having to call `git status` twice in a row.
-	// Although this also means that at startup we won't be staging anything until
-	// we call git status again.
-	pathsToStage := []string{}
 	prevConflictFileCount := 0
-	for _, file := range self.c.Model().Files {
-		if file.HasMergeConflicts {
-			prevConflictFileCount++
+	if self.c.UserConfig().Git.AutoStageResolvedConflicts {
+		// If git thinks any of our files have inline merge conflicts, but they actually don't,
+		// we stage them.
+		// Note that if files with merge conflicts have both arisen and have been resolved
+		// between refreshes, we won't stage them here. This is super unlikely though,
+		// and this approach spares us from having to call `git status` twice in a row.
+		// Although this also means that at startup we won't be staging anything until
+		// we call git status again.
+		pathsToStage := []string{}
+		for _, file := range self.c.Model().Files {
+			if file.HasMergeConflicts {
+				prevConflictFileCount++
+			}
+			if file.HasInlineMergeConflicts {
+				hasConflicts, err := mergeconflicts.FileHasConflictMarkers(file.Path)
+				if err != nil {
+					self.c.Log.Error(err)
+				} else if !hasConflicts {
+					pathsToStage = append(pathsToStage, file.Path)
+				}
+			}
 		}
-		if file.HasInlineMergeConflicts {
-			hasConflicts, err := mergeconflicts.FileHasConflictMarkers(file.Name)
-			if err != nil {
-				self.c.Log.Error(err)
-			} else if !hasConflicts {
-				pathsToStage = append(pathsToStage, file.Name)
+
+		if len(pathsToStage) > 0 {
+			self.c.LogAction(self.c.Tr.Actions.StageResolvedFiles)
+			if err := self.c.Git().WorkingTree.StageFiles(pathsToStage, nil); err != nil {
+				return err
 			}
 		}
 	}
 
-	if len(pathsToStage) > 0 {
-		self.c.LogAction(self.c.Tr.Actions.StageResolvedFiles)
-		if err := self.c.Git().WorkingTree.StageFiles(pathsToStage); err != nil {
-			return err
-		}
-	}
-
 	files := self.c.Git().Loaders.FileLoader.
-		GetStatusFiles(git_commands.GetStatusFileOptions{})
+		GetStatusFiles(git_commands.GetStatusFileOptions{
+			ForceShowUntracked: self.c.Contexts().Files.ForceShowUntracked(),
+		})
 
 	conflictFileCount := 0
 	for _, file := range files {
@@ -588,23 +581,21 @@ func (self *RefreshHelper) refreshStateFiles() error {
 		}
 	}
 
-	if self.c.Git().Status.WorkingTreeState() != enums.REBASE_MODE_NONE && conflictFileCount == 0 && prevConflictFileCount > 0 {
+	if self.c.Git().Status.WorkingTreeState().Any() && conflictFileCount == 0 && prevConflictFileCount > 0 {
 		self.c.OnUIThread(func() error { return self.mergeAndRebaseHelper.PromptToContinueRebase() })
 	}
 
 	fileTreeViewModel.RWMutex.Lock()
 
 	// only taking over the filter if it hasn't already been set by the user.
-	// Though this does make it impossible for the user to actually say they want to display all if
-	// conflicts are currently being shown. Hmm. Worth it I reckon. If we need to add some
-	// extra state here to see if the user's set the filter themselves we can do that, but
-	// I'd prefer to maintain as little state as possible.
-	if conflictFileCount > 0 {
+	if conflictFileCount > 0 && prevConflictFileCount == 0 {
 		if fileTreeViewModel.GetFilter() == filetree.DisplayAll {
 			fileTreeViewModel.SetStatusFilter(filetree.DisplayConflicted)
+			self.c.Contexts().Files.GetView().Subtitle = self.c.Tr.FilterLabelConflictingFiles
 		}
-	} else if fileTreeViewModel.GetFilter() == filetree.DisplayConflicted {
+	} else if conflictFileCount == 0 && fileTreeViewModel.GetFilter() == filetree.DisplayConflicted {
 		fileTreeViewModel.SetStatusFilter(filetree.DisplayAll)
+		self.c.Contexts().Files.GetView().Subtitle = ""
 	}
 
 	self.c.Model().Files = files
@@ -622,7 +613,7 @@ func (self *RefreshHelper) refreshStateFiles() error {
 // FilteredReflogCommits are rendered in the reflogs panel, and ReflogCommits
 // are used by the branches panel to obtain recency values for sorting.
 func (self *RefreshHelper) refreshReflogCommits() error {
-	// pulling state into its own variable incase it gets swapped out for another state
+	// pulling state into its own variable in case it gets swapped out for another state
 	// and we get an out of bounds exception
 	model := self.c.Model()
 	var lastReflogCommit *models.Commit
@@ -632,7 +623,7 @@ func (self *RefreshHelper) refreshReflogCommits() error {
 
 	refresh := func(stateCommits *[]*models.Commit, filterPath string, filterAuthor string) error {
 		commits, onlyObtainedNewReflogCommits, err := self.c.Git().Loaders.ReflogCommitLoader.
-			GetReflogCommits(lastReflogCommit, filterPath, filterAuthor)
+			GetReflogCommits(self.c.Model().HashPool, lastReflogCommit, filterPath, filterAuthor)
 		if err != nil {
 			return err
 		}
@@ -657,7 +648,8 @@ func (self *RefreshHelper) refreshReflogCommits() error {
 		model.FilteredReflogCommits = model.ReflogCommits
 	}
 
-	return self.refreshView(self.c.Contexts().ReflogCommits)
+	self.refreshView(self.c.Contexts().ReflogCommits)
+	return nil
 }
 
 func (self *RefreshHelper) refreshRemotes() error {
@@ -681,14 +673,8 @@ func (self *RefreshHelper) refreshRemotes() error {
 		}
 	}
 
-	if err := self.refreshView(self.c.Contexts().Remotes); err != nil {
-		return err
-	}
-
-	if err := self.refreshView(self.c.Contexts().RemoteBranches); err != nil {
-		return err
-	}
-
+	self.refreshView(self.c.Contexts().Remotes)
+	self.refreshView(self.c.Contexts().RemoteBranches)
 	return nil
 }
 
@@ -702,23 +688,20 @@ func (self *RefreshHelper) loadWorktrees() {
 	self.c.Model().Worktrees = worktrees
 }
 
-func (self *RefreshHelper) refreshWorktrees() error {
+func (self *RefreshHelper) refreshWorktrees() {
 	self.loadWorktrees()
 
 	// need to refresh branches because the branches view shows worktrees against
 	// branches
-	if err := self.refreshView(self.c.Contexts().Branches); err != nil {
-		return err
-	}
-
-	return self.refreshView(self.c.Contexts().Worktrees)
+	self.refreshView(self.c.Contexts().Branches)
+	self.refreshView(self.c.Contexts().Worktrees)
 }
 
-func (self *RefreshHelper) refreshStashEntries() error {
+func (self *RefreshHelper) refreshStashEntries() {
 	self.c.Model().StashEntries = self.c.Git().Loaders.StashLoader.
 		GetStashEntries(self.c.Modes().Filtering.GetPath())
 
-	return self.refreshView(self.c.Contexts().Stash)
+	self.refreshView(self.c.Contexts().Stash)
 }
 
 // never call this on its own, it should only be called from within refreshCommits()
@@ -737,7 +720,7 @@ func (self *RefreshHelper) refreshStatus() {
 
 	repoName := self.c.Git().RepoPaths.RepoName()
 
-	status := presentation.FormatStatus(repoName, currentBranch, types.ItemOperationNone, linkedWorktreeName, workingTreeState, self.c.Tr, self.c.UserConfig)
+	status := presentation.FormatStatus(repoName, currentBranch, types.ItemOperationNone, linkedWorktreeName, workingTreeState, self.c.Tr, self.c.UserConfig())
 
 	self.c.SetViewContent(self.c.Views().Status, status)
 }
@@ -758,15 +741,23 @@ func (self *RefreshHelper) refForLog() string {
 	return bisectInfo.GetStartHash()
 }
 
-func (self *RefreshHelper) refreshView(context types.Context) error {
+func (self *RefreshHelper) refreshView(context types.Context) {
 	// Re-applying the filter must be done before re-rendering the view, so that
 	// the filtered list model is up to date for rendering.
 	self.searchHelper.ReApplyFilter(context)
 
-	err := self.c.PostRefreshUpdate(context)
+	self.c.PostRefreshUpdate(context)
 
-	// Re-applying the search must be done after re-rendering the view though,
-	// so that the "x of y" status is shown correctly.
-	self.searchHelper.ReApplySearch(context)
-	return err
+	self.c.AfterLayout(func() error {
+		// Re-applying the search must be done after re-rendering the view though,
+		// so that the "x of y" status is shown correctly.
+		//
+		// Also, it must be done after layout, because otherwise FocusPoint
+		// hasn't been called yet (see ListContextTrait.FocusLine), which means
+		// that the scroll position might be such that the entire visible
+		// content is outside the viewport. And this would cause problems in
+		// searchModelCommits.
+		self.searchHelper.ReApplySearch(context)
+		return nil
+	})
 }

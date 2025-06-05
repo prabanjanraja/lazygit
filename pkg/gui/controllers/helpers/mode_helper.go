@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jesseduffield/lazygit/pkg/commands/types/enums"
-	"github.com/jesseduffield/lazygit/pkg/gui/presentation"
 	"github.com/jesseduffield/lazygit/pkg/gui/style"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
 	"github.com/samber/lo"
@@ -116,12 +114,12 @@ func (self *ModeHelper) Statuses() []ModeStatus {
 		},
 		{
 			IsActive: func() bool {
-				return !self.suppressRebasingMode && self.c.Git().Status.WorkingTreeState() != enums.REBASE_MODE_NONE
+				return !self.suppressRebasingMode && self.c.Git().Status.WorkingTreeState().Any()
 			},
 			Description: func() string {
 				workingTreeState := self.c.Git().Status.WorkingTreeState()
 				return self.withResetButton(
-					presentation.FormatWorkingTreeStateTitle(self.c.Tr, workingTreeState), style.FgYellow,
+					workingTreeState.Title(self.c.Tr), style.FgYellow,
 				)
 			},
 			Reset: self.mergeAndRebaseHelper.AbortMergeOrRebaseWithConfirm,
@@ -169,9 +167,9 @@ func (self *ModeHelper) ClearFiltering() error {
 		self.c.State().GetRepoState().SetScreenMode(types.SCREEN_NORMAL)
 	}
 
-	return self.c.Refresh(types.RefreshOptions{
+	self.c.Refresh(types.RefreshOptions{
 		Scope: []types.RefreshableView{types.COMMITS},
-		Then: func() error {
+		Then: func() {
 			// Find the commit that was last selected in filtering mode, and select it again after refreshing
 			if !self.c.Contexts().LocalCommits.SelectCommitByHash(selectedCommitHash) {
 				// If we couldn't find it (either because no commit was selected
@@ -180,9 +178,10 @@ func (self *ModeHelper) ClearFiltering() error {
 				// before we entered filtering
 				self.c.Contexts().LocalCommits.SelectCommitByHash(self.c.Modes().Filtering.GetSelectedCommitHash())
 			}
-			return nil
+			self.c.Contexts().LocalCommits.HandleFocus(types.OnFocusOpts{})
 		},
 	})
+	return nil
 }
 
 func (self *ModeHelper) SetSuppressRebasingMode(value bool) {

@@ -23,7 +23,8 @@ func (self *DiffingMenuAction) Call() error {
 				OnPress: func() error {
 					self.c.Modes().Diffing.Ref = name
 					// can scope this down based on current view but too lazy right now
-					return self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
+					self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
+					return nil
 				},
 			},
 		}...)
@@ -33,14 +34,17 @@ func (self *DiffingMenuAction) Call() error {
 		{
 			Label: self.c.Tr.EnterRefToDiff,
 			OnPress: func() error {
-				return self.c.Prompt(types.PromptOpts{
+				self.c.Prompt(types.PromptOpts{
 					Title:               self.c.Tr.EnterRefName,
 					FindSuggestionsFunc: self.c.Helpers().Suggestions.GetRefsSuggestionsFunc(),
 					HandleConfirm: func(response string) error {
 						self.c.Modes().Diffing.Ref = strings.TrimSpace(response)
-						return self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
+						self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
+						return nil
 					},
 				})
+
+				return nil
 			},
 		},
 	}...)
@@ -51,14 +55,16 @@ func (self *DiffingMenuAction) Call() error {
 				Label: self.c.Tr.SwapDiff,
 				OnPress: func() error {
 					self.c.Modes().Diffing.Reverse = !self.c.Modes().Diffing.Reverse
-					return self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
+					self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
+					return nil
 				},
 			},
 			{
 				Label: self.c.Tr.ExitDiffMode,
 				OnPress: func() error {
 					self.c.Modes().Diffing = diffing.New()
-					return self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
+					self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
+					return nil
 				},
 			},
 		}...)

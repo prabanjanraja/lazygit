@@ -12,11 +12,6 @@ import (
 	"github.com/jesseduffield/lazygit/pkg/utils"
 )
 
-type IWorktreeHelper interface {
-	GetMainWorktreeName() string
-	GetCurrentWorktreeName() string
-}
-
 type WorktreeHelper struct {
 	c                 *HelperCommon
 	reposHelper       *ReposHelper
@@ -63,8 +58,8 @@ func (self *WorktreeHelper) NewWorktree() error {
 	branch := self.refsHelper.GetCheckedOutRef()
 	currentBranchName := branch.RefName()
 
-	f := func(detached bool) error {
-		return self.c.Prompt(types.PromptOpts{
+	f := func(detached bool) {
+		self.c.Prompt(types.PromptOpts{
 			Title:               self.c.Tr.NewWorktreeBase,
 			InitialContent:      currentBranchName,
 			FindSuggestionsFunc: self.suggestionsHelper.GetRefsSuggestionsFunc(),
@@ -84,13 +79,15 @@ func (self *WorktreeHelper) NewWorktree() error {
 			{
 				LabelColumns: []string{utils.ResolvePlaceholderString(self.c.Tr.CreateWorktreeFrom, placeholders)},
 				OnPress: func() error {
-					return f(false)
+					f(false)
+					return nil
 				},
 			},
 			{
 				LabelColumns: []string{utils.ResolvePlaceholderString(self.c.Tr.CreateWorktreeFromDetached, placeholders)},
 				OnPress: func() error {
-					return f(true)
+					f(true)
+					return nil
 				},
 			},
 		},
@@ -114,7 +111,7 @@ func (self *WorktreeHelper) NewWorktreeCheckout(base string, canCheckoutBase boo
 		})
 	}
 
-	return self.c.Prompt(types.PromptOpts{
+	self.c.Prompt(types.PromptOpts{
 		Title: self.c.Tr.NewWorktreePath,
 		HandleConfirm: func(path string) error {
 			opts.Path = path
@@ -126,7 +123,7 @@ func (self *WorktreeHelper) NewWorktreeCheckout(base string, canCheckoutBase boo
 			if canCheckoutBase {
 				title := utils.ResolvePlaceholderString(self.c.Tr.NewBranchNameLeaveBlank, map[string]string{"default": base})
 				// prompt for the new branch name where a blank means we just check out the branch
-				return self.c.Prompt(types.PromptOpts{
+				self.c.Prompt(types.PromptOpts{
 					Title: title,
 					HandleConfirm: func(branchName string) error {
 						opts.Branch = branchName
@@ -134,23 +131,29 @@ func (self *WorktreeHelper) NewWorktreeCheckout(base string, canCheckoutBase boo
 						return f()
 					},
 				})
-			} else {
-				// prompt for the new branch name where a blank means we just check out the branch
-				return self.c.Prompt(types.PromptOpts{
-					Title: self.c.Tr.NewBranchName,
-					HandleConfirm: func(branchName string) error {
-						if branchName == "" {
-							return errors.New(self.c.Tr.BranchNameCannotBeBlank)
-						}
 
-						opts.Branch = branchName
-
-						return f()
-					},
-				})
+				return nil
 			}
+
+			// prompt for the new branch name where a blank means we just check out the branch
+			self.c.Prompt(types.PromptOpts{
+				Title: self.c.Tr.NewBranchName,
+				HandleConfirm: func(branchName string) error {
+					if branchName == "" {
+						return errors.New(self.c.Tr.BranchNameCannotBeBlank)
+					}
+
+					opts.Branch = branchName
+
+					return f()
+				},
+			})
+
+			return nil
 		},
 	})
+
+	return nil
 }
 
 func (self *WorktreeHelper) Switch(worktree *models.Worktree, contextKey types.ContextKey) error {
@@ -178,7 +181,7 @@ func (self *WorktreeHelper) Remove(worktree *models.Worktree, force bool) error 
 		},
 	)
 
-	return self.c.Confirm(types.ConfirmOpts{
+	self.c.Confirm(types.ConfirmOpts{
 		Title:  title,
 		Prompt: message,
 		HandleConfirm: func() error {
@@ -195,10 +198,13 @@ func (self *WorktreeHelper) Remove(worktree *models.Worktree, force bool) error 
 					}
 					return err
 				}
-				return self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.WORKTREES, types.BRANCHES, types.FILES}})
+				self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.WORKTREES, types.BRANCHES, types.FILES}})
+				return nil
 			})
 		},
 	})
+
+	return nil
 }
 
 func (self *WorktreeHelper) Detach(worktree *models.Worktree) error {
@@ -209,7 +215,8 @@ func (self *WorktreeHelper) Detach(worktree *models.Worktree) error {
 		if err != nil {
 			return err
 		}
-		return self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.WORKTREES, types.BRANCHES, types.FILES}})
+		self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.WORKTREES, types.BRANCHES, types.FILES}})
+		return nil
 	})
 }
 

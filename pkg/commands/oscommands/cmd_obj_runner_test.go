@@ -39,6 +39,8 @@ func TestProcessOutput(t *testing.T) {
 			return "passphrase"
 		case PIN:
 			return "pin"
+		case Token:
+			return "token"
 		default:
 			panic("unexpected credential type")
 		}
@@ -87,10 +89,22 @@ func TestProcessOutput(t *testing.T) {
 			expectedToWrite:         "passphrase",
 		},
 		{
-			name:                    "pin prompt",
+			name:                    "security key pin prompt",
 			promptUserForCredential: defaultPromptUserForCredential,
 			output:                  "Enter PIN for key '123':",
 			expectedToWrite:         "pin",
+		},
+		{
+			name:                    "pkcs11 key pin prompt",
+			promptUserForCredential: defaultPromptUserForCredential,
+			output:                  "Enter PIN for '123':",
+			expectedToWrite:         "pin",
+		},
+		{
+			name:                    "2FA token prompt",
+			promptUserForCredential: defaultPromptUserForCredential,
+			output:                  "testuser 2FA Token (citadel)",
+			expectedToWrite:         "token",
 		},
 		{
 			name:                    "username and password prompt",
@@ -112,8 +126,8 @@ func TestProcessOutput(t *testing.T) {
 			reader := strings.NewReader(scenario.output)
 			writer := &strings.Builder{}
 
-			task := gocui.NewFakeTask()
-			runner.processOutput(reader, writer, toChanFn(scenario.promptUserForCredential), task)
+			cmdObj := &CmdObj{task: gocui.NewFakeTask()}
+			runner.processOutput(reader, writer, toChanFn(scenario.promptUserForCredential), cmdObj)
 
 			if writer.String() != scenario.expectedToWrite {
 				t.Errorf("expected to write '%s' but got '%s'", scenario.expectedToWrite, writer.String())

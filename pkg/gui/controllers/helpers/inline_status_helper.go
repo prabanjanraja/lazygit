@@ -15,7 +15,7 @@ type InlineStatusHelper struct {
 
 	windowHelper             *WindowHelper
 	contextsWithInlineStatus map[types.ContextKey]*inlineStatusInfo
-	mutex                    *deadlock.Mutex
+	mutex                    deadlock.Mutex
 }
 
 func NewInlineStatusHelper(c *HelperCommon, windowHelper *WindowHelper) *InlineStatusHelper {
@@ -23,7 +23,6 @@ func NewInlineStatusHelper(c *HelperCommon, windowHelper *WindowHelper) *InlineS
 		c:                        c,
 		windowHelper:             windowHelper,
 		contextsWithInlineStatus: make(map[types.ContextKey]*inlineStatusInfo),
-		mutex:                    &deadlock.Mutex{},
 	}
 }
 
@@ -99,7 +98,7 @@ func (self *InlineStatusHelper) start(opts InlineStatusOpts) {
 		self.contextsWithInlineStatus[opts.ContextKey] = info
 
 		go utils.Safe(func() {
-			ticker := time.NewTicker(time.Millisecond * time.Duration(self.c.UserConfig.Gui.Spinner.Rate))
+			ticker := time.NewTicker(time.Millisecond * time.Duration(self.c.UserConfig().Gui.Spinner.Rate))
 			defer ticker.Stop()
 		outer:
 			for {
@@ -151,7 +150,7 @@ func (self *InlineStatusHelper) stop(opts InlineStatusOpts) {
 
 func (self *InlineStatusHelper) renderContext(contextKey types.ContextKey) {
 	self.c.OnUIThread(func() error {
-		_ = self.c.ContextForKey(contextKey).HandleRender()
+		self.c.ContextForKey(contextKey).HandleRender()
 		return nil
 	})
 }

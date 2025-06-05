@@ -62,24 +62,24 @@ func (self *PatchBuildingController) GetMouseKeybindings(opts types.KeybindingsO
 	return []*gocui.ViewMouseBinding{}
 }
 
-func (self *PatchBuildingController) GetOnFocus() func(types.OnFocusOpts) error {
-	return func(opts types.OnFocusOpts) error {
+func (self *PatchBuildingController) GetOnFocus() func(types.OnFocusOpts) {
+	return func(opts types.OnFocusOpts) {
 		// no need to change wrap on the secondary view because it can't be interacted with
-		self.c.Views().PatchBuilding.Wrap = false
+		self.c.Views().PatchBuilding.Wrap = self.c.UserConfig().Gui.WrapLinesInStagingView
 
-		return self.c.Helpers().PatchBuilding.RefreshPatchBuildingPanel(opts)
+		self.c.Helpers().PatchBuilding.RefreshPatchBuildingPanel(opts)
 	}
 }
 
-func (self *PatchBuildingController) GetOnFocusLost() func(types.OnFocusLostOpts) error {
-	return func(opts types.OnFocusLostOpts) error {
+func (self *PatchBuildingController) GetOnFocusLost() func(types.OnFocusLostOpts) {
+	return func(opts types.OnFocusLostOpts) {
+		self.context().SetState(nil)
+
 		self.c.Views().PatchBuilding.Wrap = true
 
 		if self.c.Git().Patch.PatchBuilder.IsEmpty() {
 			self.c.Git().Patch.PatchBuilder.Reset()
 		}
-
-		return nil
 	}
 }
 
@@ -107,6 +107,7 @@ func (self *PatchBuildingController) EditFile() error {
 	}
 
 	lineNumber := self.context().GetState().CurrentLineNumber()
+	lineNumber = self.c.Helpers().Diff.AdjustLineNumber(path, lineNumber, self.context().GetViewName())
 	return self.c.Helpers().Files.EditFileAtLine(path, lineNumber)
 }
 
@@ -115,16 +116,16 @@ func (self *PatchBuildingController) ToggleSelectionAndRefresh() error {
 		return err
 	}
 
-	return self.c.Refresh(types.RefreshOptions{
+	self.c.Refresh(types.RefreshOptions{
 		Scope: []types.RefreshableView{types.PATCH_BUILDING, types.COMMIT_FILES},
 	})
+	return nil
 }
 
 func (self *PatchBuildingController) toggleSelection() error {
 	self.context().GetMutex().Lock()
 	defer self.context().GetMutex().Unlock()
 
-	toggleFunc := self.c.Git().Patch.PatchBuilder.AddFileLineRange
 	filename := self.c.Contexts().CommitFiles.GetSelectedPath()
 	if filename == "" {
 		return nil
@@ -132,19 +133,26 @@ func (self *PatchBuildingController) toggleSelection() error {
 
 	state := self.context().GetState()
 
+	// Get added/deleted lines in the selected patch range
+	lineIndicesToToggle := state.LineIndicesOfAddedOrDeletedLinesInSelectedPatchRange()
+	if len(lineIndicesToToggle) == 0 {
+		// Only context lines or header lines selected, so nothing to do
+		return nil
+	}
+
 	includedLineIndices, err := self.c.Git().Patch.PatchBuilder.GetFileIncLineIndices(filename)
 	if err != nil {
 		return err
 	}
-	currentLineIsStaged := lo.Contains(includedLineIndices, state.GetSelectedLineIdx())
-	if currentLineIsStaged {
+
+	toggleFunc := self.c.Git().Patch.PatchBuilder.AddFileLineRange
+	firstSelectedChangeLineIsStaged := lo.Contains(includedLineIndices, lineIndicesToToggle[0])
+	if firstSelectedChangeLineIsStaged {
 		toggleFunc = self.c.Git().Patch.PatchBuilder.RemoveFileLineRange
 	}
 
 	// add range of lines to those set for the file
-	firstLineIdx, lastLineIdx := state.SelectedRange()
-
-	if err := toggleFunc(filename, firstLineIdx, lastLineIdx); err != nil {
+	if err := toggleFunc(filename, lineIndicesToToggle); err != nil {
 		// might actually want to return an error here
 		self.c.Log.Error(err)
 	}
@@ -153,6 +161,8 @@ func (self *PatchBuildingController) toggleSelection() error {
 		state.SetLineSelectMode()
 	}
 
+	state.SelectNextStageableLineOfSameIncludedState(self.context().GetIncludedLineIndices(), firstSelectedChangeLineIsStaged)
+
 	return nil
 }
 
@@ -160,10 +170,12 @@ func (self *PatchBuildingController) Escape() error {
 	context := self.c.Contexts().CustomPatchBuilder
 	state := context.GetState()
 
-	if state.SelectingRange() || state.SelectingHunk() {
+	if state.SelectingRange() || state.SelectingHunkEnabledByUser() {
 		state.SetLineSelectMode()
-		return self.c.PostRefreshUpdate(context)
+		self.c.PostRefreshUpdate(context)
+		return nil
 	}
 
-	return self.c.Helpers().PatchBuilding.Escape()
+	self.c.Helpers().PatchBuilding.Escape()
+	return nil
 }

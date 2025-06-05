@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"github.com/jesseduffield/gocui"
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
 	"github.com/jesseduffield/lazygit/pkg/gui/context"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
@@ -20,7 +19,7 @@ func NewSubCommitsController(
 ) *SubCommitsController {
 	return &SubCommitsController{
 		baseController: baseController{},
-		ListControllerTrait: NewListControllerTrait[*models.Commit](
+		ListControllerTrait: NewListControllerTrait(
 			c,
 			c.Contexts().SubCommits,
 			c.Contexts().SubCommits.GetSelected,
@@ -38,20 +37,19 @@ func (self *SubCommitsController) context() *context.SubCommitsContext {
 	return self.c.Contexts().SubCommits
 }
 
-func (self *SubCommitsController) GetOnRenderToMain() func() error {
-	return func() error {
-		return self.c.Helpers().Diff.WithDiffModeCheck(func() error {
+func (self *SubCommitsController) GetOnRenderToMain() func() {
+	return func() {
+		self.c.Helpers().Diff.WithDiffModeCheck(func() {
 			commit := self.context().GetSelected()
 			var task types.UpdateTask
 			if commit == nil {
 				task = types.NewRenderStringTask("No commits")
 			} else {
-				cmdObj := self.c.Git().Commit.ShowCmdObj(commit.Hash, self.c.Modes().Filtering.GetPath())
-
-				task = types.NewRunPtyTask(cmdObj.GetCmd())
+				refRange := self.context().GetSelectedRefRangeForDiffFiles()
+				task = self.c.Helpers().Diff.GetUpdateTaskForRenderingCommitsDiff(commit, refRange)
 			}
 
-			return self.c.RenderToMainViews(types.RefreshMainOpts{
+			self.c.RenderToMainViews(types.RefreshMainOpts{
 				Pair: self.c.MainViewPairs().Normal,
 				Main: &types.ViewUpdateOpts{
 					Title:    "Commit",
@@ -63,16 +61,12 @@ func (self *SubCommitsController) GetOnRenderToMain() func() error {
 	}
 }
 
-func (self *SubCommitsController) GetOnFocus() func(types.OnFocusOpts) error {
-	return func(types.OnFocusOpts) error {
+func (self *SubCommitsController) GetOnFocus() func(types.OnFocusOpts) {
+	return func(types.OnFocusOpts) {
 		context := self.context()
 		if context.GetSelectedLineIdx() > COMMIT_THRESHOLD && context.GetLimitCommits() {
 			context.SetLimitCommits(false)
-			self.c.OnWorker(func(_ gocui.Task) error {
-				return self.c.Refresh(types.RefreshOptions{Scope: []types.RefreshableView{types.SUB_COMMITS}})
-			})
+			self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.SUB_COMMITS}})
 		}
-
-		return nil
 	}
 }
