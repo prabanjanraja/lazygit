@@ -74,6 +74,9 @@ func (self *ListController) scrollHorizontal(scrollFunc func()) error {
 	scrollFunc()
 
 	self.context.HandleFocus(types.OnFocusOpts{})
+	if self.context.NeedsRerenderOnWidthChange() == types.NEEDS_RERENDER_ON_WIDTH_CHANGE_WHEN_WIDTH_CHANGES {
+		self.context.HandleRender()
+	}
 	return nil
 }
 
@@ -135,7 +138,9 @@ func (self *ListController) HandleGotoTop() error {
 }
 
 func (self *ListController) HandleGotoBottom() error {
-	return self.handleLineChange(self.context.GetList().Len())
+	bottomIdx := self.context.IndexForGotoBottom()
+	change := bottomIdx - self.context.GetList().GetSelectedLineIdx()
+	return self.handleLineChange(change)
 }
 
 func (self *ListController) HandleToggleRangeSelect() error {
@@ -179,7 +184,7 @@ func (self *ListController) HandleClick(opts gocui.ViewMouseBindingOpts) error {
 
 func (self *ListController) pushContextIfNotFocused() error {
 	if !self.isFocused() {
-		self.c.Context().Push(self.context)
+		self.c.Context().Push(self.context, types.OnFocusOpts{})
 	}
 
 	return nil
@@ -197,10 +202,12 @@ func (self *ListController) GetKeybindings(opts types.KeybindingsOpts) []*types.
 		{Tag: "navigation", Key: opts.GetKey(opts.Config.Universal.NextItem), Handler: self.HandleNextLine},
 		{Tag: "navigation", Key: opts.GetKey(opts.Config.Universal.PrevPage), Handler: self.HandlePrevPage, Description: self.c.Tr.PrevPage},
 		{Tag: "navigation", Key: opts.GetKey(opts.Config.Universal.NextPage), Handler: self.HandleNextPage, Description: self.c.Tr.NextPage},
-		{Tag: "navigation", Key: opts.GetKey(opts.Config.Universal.GotoTop), Handler: self.HandleGotoTop, Description: self.c.Tr.GotoTop},
+		{Tag: "navigation", Key: opts.GetKey(opts.Config.Universal.GotoTop), Handler: self.HandleGotoTop, Description: self.c.Tr.GotoTop, Alternative: "<home>"},
+		{Tag: "navigation", Key: opts.GetKey(opts.Config.Universal.GotoBottom), Handler: self.HandleGotoBottom, Description: self.c.Tr.GotoBottom, Alternative: "<end>"},
+		{Tag: "navigation", Key: opts.GetKey(opts.Config.Universal.GotoTopAlt), Handler: self.HandleGotoTop},
+		{Tag: "navigation", Key: opts.GetKey(opts.Config.Universal.GotoBottomAlt), Handler: self.HandleGotoBottom},
 		{Tag: "navigation", Key: opts.GetKey(opts.Config.Universal.ScrollLeft), Handler: self.HandleScrollLeft},
 		{Tag: "navigation", Key: opts.GetKey(opts.Config.Universal.ScrollRight), Handler: self.HandleScrollRight},
-		{Tag: "navigation", Key: opts.GetKey(opts.Config.Universal.GotoBottom), Handler: self.HandleGotoBottom, Description: self.c.Tr.GotoBottom},
 	}
 
 	if self.context.RangeSelectEnabled() {

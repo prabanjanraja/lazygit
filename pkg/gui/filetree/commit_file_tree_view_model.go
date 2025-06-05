@@ -5,10 +5,10 @@ import (
 	"sync"
 
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
+	"github.com/jesseduffield/lazygit/pkg/common"
 	"github.com/jesseduffield/lazygit/pkg/gui/context/traits"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
 	"github.com/samber/lo"
-	"github.com/sirupsen/logrus"
 )
 
 type ICommitFileTreeViewModel interface {
@@ -43,8 +43,8 @@ type CommitFileTreeViewModel struct {
 
 var _ ICommitFileTreeViewModel = &CommitFileTreeViewModel{}
 
-func NewCommitFileTreeViewModel(getFiles func() []*models.CommitFile, log *logrus.Entry, showTree bool) *CommitFileTreeViewModel {
-	fileTree := NewCommitFileTree(getFiles, log, showTree)
+func NewCommitFileTreeViewModel(getFiles func() []*models.CommitFile, common *common.Common, showTree bool) *CommitFileTreeViewModel {
+	fileTree := NewCommitFileTree(getFiles, common, showTree)
 	listCursor := traits.NewListCursor(fileTree.Len)
 	return &CommitFileTreeViewModel{
 		ICommitFileTree: fileTree,
@@ -148,12 +148,12 @@ func (self *CommitFileTreeViewModel) ToggleShowTree() {
 	if selectedNode == nil {
 		return
 	}
-	path := selectedNode.Path
+	path := selectedNode.path
 
 	if self.InTreeMode() {
 		self.ExpandToPath(path)
 	} else if len(selectedNode.Children) > 0 {
-		path = selectedNode.GetLeaves()[0].Path
+		path = selectedNode.GetLeaves()[0].path
 	}
 
 	index, found := self.GetIndexForPath(path)
@@ -170,7 +170,7 @@ func (self *CommitFileTreeViewModel) CollapseAll() {
 		return
 	}
 
-	topLevelPath := strings.Split(selectedNode.Path, "/")[0]
+	topLevelPath := strings.Split(selectedNode.path, "/")[0]
 	index, found := self.GetIndexForPath(topLevelPath)
 	if found {
 		self.SetSelectedLineIdx(index)
@@ -186,7 +186,7 @@ func (self *CommitFileTreeViewModel) ExpandAll() {
 		return
 	}
 
-	index, found := self.GetIndexForPath(selectedNode.Path)
+	index, found := self.GetIndexForPath(selectedNode.path)
 	if found {
 		self.SetSelectedLineIdx(index)
 	}

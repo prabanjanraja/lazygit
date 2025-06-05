@@ -4,14 +4,9 @@ import (
 	"errors"
 
 	"github.com/jesseduffield/lazygit/pkg/commands/patch"
-	"github.com/jesseduffield/lazygit/pkg/commands/types/enums"
 	"github.com/jesseduffield/lazygit/pkg/gui/patch_exploring"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
 )
-
-type IPatchBuildingHelper interface {
-	ValidateNormalWorkingTreeState() (bool, error)
-}
 
 type PatchBuildingHelper struct {
 	c *HelperCommon
@@ -26,7 +21,7 @@ func NewPatchBuildingHelper(
 }
 
 func (self *PatchBuildingHelper) ValidateNormalWorkingTreeState() (bool, error) {
-	if self.c.Git().Status.WorkingTreeState() != enums.REBASE_MODE_NONE {
+	if self.c.Git().Status.WorkingTreeState().Any() {
 		return false, errors.New(self.c.Tr.CantPatchWhileRebasingError)
 	}
 	return true, nil

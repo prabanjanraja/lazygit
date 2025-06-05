@@ -137,7 +137,7 @@ func (self *FixupHelper) HandleFindBaseCommitForFixupPress() error {
 		}
 
 		self.c.Contexts().LocalCommits.SetSelection(index)
-		self.c.Context().Push(self.c.Contexts().LocalCommits)
+		self.c.Context().Push(self.c.Contexts().LocalCommits, types.OnFocusOpts{})
 		return nil
 	}
 
@@ -342,6 +342,6 @@ func (self *FixupHelper) blameAddedLines(commits []*models.Commit, addedLineHunk
 
 func (self *FixupHelper) findCommit(commits []*models.Commit, hash string) (*models.Commit, int, bool) {
 	return lo.FindIndexOf(commits, func(commit *models.Commit) bool {
-		return commit.Hash == hash
+		return commit.Hash() == hash
 	})
 }

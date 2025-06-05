@@ -6,6 +6,7 @@ import (
 	"github.com/gookit/color"
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
 	"github.com/jesseduffield/lazygit/pkg/commands/patch"
+	"github.com/jesseduffield/lazygit/pkg/config"
 	"github.com/jesseduffield/lazygit/pkg/gui/filetree"
 	"github.com/jesseduffield/lazygit/pkg/gui/presentation/icons"
 	"github.com/jesseduffield/lazygit/pkg/gui/style"
@@ -23,12 +24,14 @@ func RenderFileTree(
 	submoduleConfigs []*models.SubmoduleConfig,
 	showFileIcons bool,
 	showNumstat bool,
+	customIconsConfig *config.CustomIconsConfig,
+	showRootItem bool,
 ) []string {
 	collapsedPaths := tree.CollapsedPaths()
 	return renderAux(tree.GetRoot().Raw(), collapsedPaths, -1, -1, func(node *filetree.Node[models.File], treeDepth int, visualDepth int, isCollapsed bool) string {
 		fileNode := filetree.NewFileNode(node)
 
-		return getFileLine(isCollapsed, fileNode.GetHasUnstagedChanges(), fileNode.GetHasStagedChanges(), treeDepth, visualDepth, showNumstat, showFileIcons, submoduleConfigs, node)
+		return getFileLine(isCollapsed, fileNode.GetHasUnstagedChanges(), fileNode.GetHasStagedChanges(), treeDepth, visualDepth, showNumstat, showFileIcons, submoduleConfigs, node, customIconsConfig, showRootItem)
 	})
 }
 
@@ -36,12 +39,13 @@ func RenderCommitFileTree(
 	tree *filetree.CommitFileTreeViewModel,
 	patchBuilder *patch.PatchBuilder,
 	showFileIcons bool,
+	customIconsConfig *config.CustomIconsConfig,
 ) []string {
 	collapsedPaths := tree.CollapsedPaths()
 	return renderAux(tree.GetRoot().Raw(), collapsedPaths, -1, -1, func(node *filetree.Node[models.CommitFile], treeDepth int, visualDepth int, isCollapsed bool) string {
 		status := commitFilePatchStatus(node, tree, patchBuilder)
 
-		return getCommitFileLine(isCollapsed, treeDepth, visualDepth, node, status, showFileIcons)
+		return getCommitFileLine(isCollapsed, treeDepth, visualDepth, node, status, showFileIcons, customIconsConfig)
 	})
 }
 
@@ -52,11 +56,11 @@ func commitFilePatchStatus(node *filetree.Node[models.CommitFile], tree *filetre
 	// be whatever status it is, but if it's a non-leaf it will determine its status
 	// based on the leaves of that subtree
 	if node.EveryFile(func(file *models.CommitFile) bool {
-		return patchBuilder.GetFileStatus(file.Name, tree.GetRef().RefName()) == patch.WHOLE
+		return patchBuilder.GetFileStatus(file.Path, tree.GetRef().RefName()) == patch.WHOLE
 	}) {
 		return patch.WHOLE
 	} else if node.EveryFile(func(file *models.CommitFile) bool {
-		return patchBuilder.GetFileStatus(file.Name, tree.GetRef().RefName()) == patch.UNSELECTED
+		return patchBuilder.GetFileStatus(file.Path, tree.GetRef().RefName()) == patch.UNSELECTED
 	}) {
 		return patch.UNSELECTED
 	} else {
@@ -91,11 +95,11 @@ func renderAux[T any](
 
 	arr := []string{}
 	if !isRoot {
-		isCollapsed := collapsedPaths.IsCollapsed(node.GetPath())
+		isCollapsed := collapsedPaths.IsCollapsed(node.GetInternalPath())
 		arr = append(arr, renderLine(node, treeDepth, visualDepth, isCollapsed))
 	}
 
-	if collapsedPaths.IsCollapsed(node.GetPath()) {
+	if collapsedPaths.IsCollapsed(node.GetInternalPath()) {
 		return arr
 	}
 
@@ -116,8 +120,10 @@ func getFileLine(
 	showFileIcons bool,
 	submoduleConfigs []*models.SubmoduleConfig,
 	node *filetree.Node[models.File],
+	customIconsConfig *config.CustomIconsConfig,
+	showRootItem bool,
 ) string {
-	name := fileNameAtDepth(node, treeDepth)
+	name := fileNameAtDepth(node, treeDepth, showRootItem)
 	output := ""
 
 	var nameColor style.TextStyle
@@ -156,7 +162,7 @@ func getFileLine(
 	isDirectory := file == nil
 
 	if showFileIcons {
-		icon := icons.IconForFile(name, isSubmodule, isLinkedWorktree, isDirectory)
+		icon := icons.IconForFile(name, isSubmodule, isLinkedWorktree, isDirectory, customIconsConfig)
 		paint := color.HEX(icon.Color, false)
 		output += paint.Sprint(icon.Icon) + nameColor.Sprint(" ")
 	}
@@ -218,6 +224,7 @@ func getCommitFileLine(
 	node *filetree.Node[models.CommitFile],
 	status patch.PatchStatus,
 	showFileIcons bool,
+	customIconsConfig *config.CustomIconsConfig,
 ) string {
 	indentation := strings.Repeat("  ", visualDepth)
 	name := commitFileNameAtDepth(node, treeDepth)
@@ -266,7 +273,7 @@ func getCommitFileLine(
 	isLinkedWorktree := false
 
 	if showFileIcons {
-		icon := icons.IconForFile(name, isSubmodule, isLinkedWorktree, isDirectory)
+		icon := icons.IconForFile(name, isSubmodule, isLinkedWorktree, isDirectory, customIconsConfig)
 		paint := color.HEX(icon.Color, false)
 		output += paint.Sprint(icon.Icon) + " "
 	}
@@ -292,14 +299,20 @@ func getColorForChangeStatus(changeStatus string) style.TextStyle {
 	}
 }
 
-func fileNameAtDepth(node *filetree.Node[models.File], depth int) string {
-	splitName := split(node.Path)
+func fileNameAtDepth(node *filetree.Node[models.File], depth int, showRootItem bool) string {
+	splitName := split(node.GetInternalPath())
+	if depth == 0 && splitName[0] == "." {
+		if len(splitName) == 1 {
+			return "/"
+		}
+		depth = 1
+	}
 	name := join(splitName[depth:])
 
 	if node.File != nil && node.File.IsRename() {
-		splitPrevName := split(node.File.PreviousName)
+		splitPrevName := filetree.SplitFileTreePath(node.File.PreviousPath, showRootItem)
 
-		prevName := node.File.PreviousName
+		prevName := node.File.PreviousPath
 		// if the file has just been renamed inside the same directory, we can shave off
 		// the prefix for the previous path too. Otherwise we'll keep it unchanged
 		sameParentDir := len(splitName) == len(splitPrevName) && join(splitName[0:depth]) == join(splitPrevName[0:depth])
@@ -314,7 +327,13 @@ func fileNameAtDepth(node *filetree.Node[models.File], depth int) string {
 }
 
 func commitFileNameAtDepth(node *filetree.Node[models.CommitFile], depth int) string {
-	splitName := split(node.Path)
+	splitName := split(node.GetInternalPath())
+	if depth == 0 && splitName[0] == "." {
+		if len(splitName) == 1 {
+			return "/"
+		}
+		depth = 1
+	}
 	name := join(splitName[depth:])
 
 	return name

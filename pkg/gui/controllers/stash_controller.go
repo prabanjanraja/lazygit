@@ -50,8 +50,8 @@ func (self *StashController) GetKeybindings(opts types.KeybindingsOpts) []*types
 		},
 		{
 			Key:               opts.GetKey(opts.Config.Universal.Remove),
-			Handler:           self.withItem(self.handleStashDrop),
-			GetDisabledReason: self.require(self.singleItemSelected()),
+			Handler:           self.withItems(self.handleStashDrop),
+			GetDisabledReason: self.require(self.itemRangeSelected()),
 			Description:       self.c.Tr.Drop,
 			Tooltip:           self.c.Tr.StashDropTooltip,
 			DisplayOnScreen:   true,
@@ -112,7 +112,7 @@ func (self *StashController) handleStashApply(stashEntry *models.StashEntry) err
 			return err
 		}
 		if self.c.UserConfig().Gui.SwitchToFilesAfterStashApply {
-			self.c.Context().Push(self.c.Contexts().Files)
+			self.c.Context().Push(self.c.Contexts().Files, types.OnFocusOpts{})
 		}
 		return nil
 	}
@@ -141,7 +141,7 @@ func (self *StashController) handleStashPop(stashEntry *models.StashEntry) error
 			return err
 		}
 		if self.c.UserConfig().Gui.SwitchToFilesAfterStashPop {
-			self.c.Context().Push(self.c.Contexts().Files)
+			self.c.Context().Push(self.c.Contexts().Files, types.OnFocusOpts{})
 		}
 		return nil
 	}
@@ -161,16 +161,19 @@ func (self *StashController) handleStashPop(stashEntry *models.StashEntry) error
 	return nil
 }
 
-func (self *StashController) handleStashDrop(stashEntry *models.StashEntry) error {
+func (self *StashController) handleStashDrop(stashEntries []*models.StashEntry) error {
 	self.c.Confirm(types.ConfirmOpts{
 		Title:  self.c.Tr.StashDrop,
 		Prompt: self.c.Tr.SureDropStashEntry,
 		HandleConfirm: func() error {
 			self.c.LogAction(self.c.Tr.Actions.Stash)
-			err := self.c.Git().Stash.Drop(stashEntry.Index)
-			_ = self.c.Refresh(types.RefreshOptions{Scope: []types.RefreshableView{types.STASH}})
-			if err != nil {
-				return err
+			startIndex := stashEntries[0].Index
+			for range stashEntries {
+				err := self.c.Git().Stash.Drop(startIndex)
+				_ = self.c.Refresh(types.RefreshOptions{Scope: []types.RefreshableView{types.STASH}})
+				if err != nil {
+					return err
+				}
 			}
 			return nil
 		},

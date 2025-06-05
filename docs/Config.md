@@ -31,10 +31,27 @@ to the top of your config file or via [Visual Studio Code settings.json config][
 
 ## Default
 
+This is only meant as a reference for what config options exist, and what their default values are. It is not meant to be copied and pasted into your config file as a whole; that's not a good idea for several reasons. It is recommended to include only those settings in your config file that you actually want to change.
+
 <!-- START CONFIG YAML: AUTOMATICALLY GENERATED with `go generate ./..., DO NOT UPDATE MANUALLY -->
 ```yaml
 # Config relating to the Lazygit UI
 gui:
+  # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-author-color
+  authorColors: {}
+
+  # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-branch-color
+  branchColorPatterns: {}
+
+  # Custom icons for filenames and file extensions
+  # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-files-icon--color
+  customIcons:
+    # Map of filenames to icon properties (icon and color)
+    filenames: {}
+
+    # Map of file extensions (including the dot) to icon properties (icon and color)
+    extensions: {}
+
   # The number of lines you scroll by when scrolling the main window
   scrollHeight: 2
 
@@ -173,6 +190,9 @@ gui:
   # This can be toggled from within Lazygit with the '`' key, but that will not change the default.
   showFileTree: true
 
+  # If true, add a "/" root item in the file tree representing the root of the repository. It is only added when necessary, i.e. when there is more than one item at top level.
+  showRootItemInFileTree: true
+
   # If true, show the number of lines changed per file in the Files view
   showNumstatInFilesView: false
 
@@ -187,9 +207,6 @@ gui:
 
   # If true, show jump-to-window keybindings in window titles.
   showPanelJumps: true
-
-  # Deprecated: use nerdFontsVersion instead
-  showIcons: false
 
   # Nerd fonts version to use.
   # One of: '2' | '3' | empty string (default)
@@ -323,6 +340,10 @@ git:
   # If true, periodically refresh files and submodules
   autoRefresh: true
 
+  # If not "none", lazygit will automatically fast-forward local branches to match their upstream after fetching. Applies to branches that are not the currently checked out branch, and only to those that are strictly behind their upstream (as opposed to diverged).
+  # Possible values: 'none' | 'onlyMainBranches' | 'allBranches'
+  autoForwardBranches: onlyMainBranches
+
   # If true, pass the --all arg to git fetch
   fetchAll: true
 
@@ -335,15 +356,21 @@ git:
   # Command used when displaying the current branch git log in the main window
   branchLogCmd: git log --graph --color=always --abbrev-commit --decorate --date=relative --pretty=medium {{branchName}} --
 
-  # Command used to display git log of all branches in the main window.
-  # Deprecated: Use `allBranchesLogCmds` instead.
-  allBranchesLogCmd: git log --graph --all --color=always --abbrev-commit --decorate --date=relative  --pretty=medium
+  # Commands used to display git log of all branches in the main window, they will be cycled in order of appearance (array of strings)
+  allBranchesLogCmds:
+    - git log --graph --all --color=always --abbrev-commit --decorate --date=relative  --pretty=medium
 
   # If true, do not spawn a separate process when using GPG
   overrideGpg: false
 
   # If true, do not allow force pushes
   disableForcePushing: false
+
+  # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#predefined-commit-message-prefix
+  commitPrefix: []
+
+  # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#predefined-commit-message-prefix
+  commitPrefixes: {}
 
   # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#predefined-branch-name-prefix
   branchPrefix: ""
@@ -354,19 +381,6 @@ git:
 
   # Config for showing the log in the commits view
   log:
-    # One of: 'date-order' | 'author-date-order' | 'topo-order' | 'default'
-    # 'topo-order' makes it easier to read the git log graph, but commits may not
-    # appear chronologically. See https://git-scm.com/docs/
-    #
-    # Deprecated: Configure this with `Log menu -> Commit sort order` (<c-l> in the commits window by default).
-    order: topo-order
-
-    # This determines whether the git graph is rendered in the commits panel
-    # One of 'always' | 'never' | 'when-maximised'
-    #
-    # Deprecated: Configure this with `Log menu -> Show git graph` (<c-l> in the commits window by default).
-    showGraph: always
-
     # displays the whole git graph by default in the commits view (equivalent to passing the `--all` argument to `git log`)
     showWholeGraph: false
 
@@ -428,24 +442,6 @@ os:
   # Command for opening a link. Should contain "{{link}}".
   openLink: ""
 
-  # EditCommand is the command for editing a file.
-  # Deprecated: use Edit instead. Note that semantics are different:
-  # EditCommand is just the command itself, whereas Edit contains a
-  # "{{filename}}" variable.
-  editCommand: ""
-
-  # EditCommandTemplate is the command template for editing a file
-  # Deprecated: use EditAtLine instead.
-  editCommandTemplate: ""
-
-  # OpenCommand is the command for opening a file
-  # Deprecated: use Open instead.
-  openCommand: ""
-
-  # OpenLinkCommand is the command for opening a link
-  # Deprecated: use OpenLink instead.
-  openLinkCommand: ""
-
   # CopyToClipboardCmd is the command for copying to clipboard.
   # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-command-for-copying-to-and-pasting-from-clipboard
   copyToClipboardCmd: ""
@@ -454,8 +450,19 @@ os:
   # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-command-for-copying-to-and-pasting-from-clipboard
   readFromClipboardCmd: ""
 
+  # A shell startup file containing shell aliases or shell functions. This will be sourced before running any shell commands, so that shell functions are available in the `:` command prompt or even in custom commands.
+  # See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#using-aliases-or-functions-in-shell-commands
+  shellFunctionsFile: ""
+
 # If true, don't display introductory popups upon opening Lazygit.
 disableStartupPopups: false
+
+# User-configured commands that can be invoked from within Lazygit
+# See https://github.com/jesseduffield/lazygit/blob/master/docs/Custom_Command_Keybindings.md
+customCommands: []
+
+# See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-pull-request-urls
+services: {}
 
 # What to do when opening Lazygit outside of a git repo.
 # - 'prompt': (default) ask whether to initialize a new repo or open in the most recent repo
@@ -485,6 +492,8 @@ keybinding:
     scrollRight: L
     gotoTop: <
     gotoBottom: '>'
+    gotoTop-alt: <home>
+    gotoBottom-alt: <end>
     toggleRangeSelect: v
     rangeSelectDown: <s-down>
     rangeSelectUp: <s-up>
@@ -500,6 +509,7 @@ keybinding:
       - "3"
       - "4"
       - "5"
+    focusMainView: "0"
     nextMatch: "n"
     prevMatch: "N"
     startSearch: /
@@ -509,6 +519,7 @@ keybinding:
     goInto: <enter>
     confirm: <enter>
     confirmInEditor: <a-enter>
+    confirmInEditor-alt: <c-s>
     remove: d
     new: "n"
     edit: e
@@ -581,6 +592,7 @@ keybinding:
     rebaseBranch: r
     renameBranch: R
     mergeIntoCurrentBranch: M
+    moveCommitsToNewBranch: "N"
     viewGitFlowOptions: i
     fastForward: f
     createTag: T
@@ -615,6 +627,7 @@ keybinding:
     openInBrowser: o
     viewBisectOptions: b
     startInteractiveRebase: i
+    selectCommitsOfCurrentBranch: '*'
   amendAttribute:
     resetAuthor: a
     setAuthor: A
@@ -661,32 +674,39 @@ os:
 ```
 
 ## Custom Command for Opening a Link
+
 ```yaml
 os:
   openLink: 'bash -C /path/to/your/shell-script.sh {{link}}'
 ```
+
 Specify the external command to invoke when opening URL links (i.e. creating MR/PR in GitLab, BitBucket or GitHub). `{{link}}` will be replaced by the URL to be opened. A simple shell script can be used to further mangle the passed URL.
 
 ## Custom Command for Copying to and Pasting from Clipboard
+
 ```yaml
 os:
   copyToClipboardCmd: ''
 ```
+
 Specify an external command to invoke when copying to clipboard is requested. `{{text}` will be replaced by text to be copied. Default is to copy to system clipboard.
 
 If you are working on a terminal that supports OSC52, the following command will let you take advantage of it:
+
 ```yaml
 os:
   copyToClipboardCmd: printf "\033]52;c;$(printf {{text}} | base64 -w 0)\a" > /dev/tty
 ```
 
 For tmux you need to wrap it with the [tmux escape sequence](https://github.com/tmux/tmux/wiki/FAQ#what-is-the-passthrough-escape-sequence-and-how-do-i-use-it), and enable passthrough in tmux config with `set -g allow-passthrough on`:
+
 ```yaml
 os:
   copyToClipboardCmd: printf "\033Ptmux;\033\033]52;c;$(printf {{text}} | base64 -w 0)\a\033\\" > /dev/tty
 ```
 
 For the best of both worlds, we can let the command determine if we are running in a tmux session and send the correct sequence:
+
 ```yaml
 os:
   copyToClipboardCmd: >
@@ -698,10 +718,12 @@ os:
 ```
 
 A custom command for reading from the clipboard can be set using
+
 ```yaml
 os:
   readFromClipboardCmd: ''
 ```
+
 It is used, for example, when pasting a commit message into the commit message panel. The command is supposed to output the clipboard content to stdout.
 
 ## Configuring File Editing
@@ -733,6 +755,21 @@ os:
 The `editInTerminal` option is used to decide whether lazygit needs to suspend itself to the background before calling the editor. It should really be named `suspend` because for some cases like when lazygit is opened from within a neovim session and you're using the `nvim-remote` preset, you're technically still in a terminal. Nonetheless we're sticking with the name `editInTerminal` for backwards compatibility.
 
 Contributions of new editor presets are welcome; see the `getPreset` function in [`editor_presets.go`](https://github.com/jesseduffield/lazygit/blob/master/pkg/config/editor_presets.go).
+
+## Using aliases or functions in shell commands
+
+Lazygit has a command prompt (`:`) for quickly executing shell commands without having to quit lazygit or switch to a different terminal. Most people find it convenient to have their usual shell aliases or shell functions available at this prompt. To achieve this, put your alias definitions in a separate shell startup file (which you source from your normal startup file, i.e. from `.bashrc` or `.zshrc`), and then tell lazygit about this file like so:
+
+```yml
+os:
+  shellFunctionsFile: ~/.my_aliases.sh
+```
+
+For many people it might work well enough to use their entire shell config file (`~/.bashrc` or `~/.zshrc`) as the `shellFunctionsFile`, but these config files typically do a lot more than defining aliases (e.g. initialize the completion system, start an ssh-agent, etc.) and this may unnecessarily delay execution of shell commands.
+
+When using zsh, aliases can't be used here, but functions can. It is easy to convert your existing aliases into functions, just change `alias l="ls -la"` to `l() ls -la`, for example. This way it will work as before both in the shell and in lazygit.
+
+Note that the shell aliases file is not only used when executing shell commands, but also for [custom commands](Custom_Command_Keybindings.md), and when opening a file in the editor.
 
 ## Overriding default config file location
 
@@ -843,6 +880,27 @@ gui:
 ```
 
 Note that the regular expressions are not implicitly anchored to the beginning/end of the branch name. If you want to do that, add leading `^` and/or trailing `$` as needed.
+
+## Custom Files Icon & Color
+
+You can customize the icon and color of files based on filenames or extensions:
+
+```yaml
+gui:
+  customIcons:
+    filenames:
+      "CONTRIBUTING.md": { icon: "\uede2", color: "#FEDDEF" }
+      "HACKING.md": { icon: "\uede2", color: "#FEDDEF" }
+    extensions:
+      ".cat":
+        icon: "\U000f011b"
+        color: "#BC4009"
+      ".dog":
+        icon: "\U000f0a43"
+        color: "#B6977E"
+```
+
+Note that there is no support for regular expressions.
 
 ## Example Coloring
 
@@ -972,6 +1030,7 @@ In situations where certain naming pattern is used for branches, this can be use
 Example:
 
 Some branches:
+
 - jsmith/AB-123
 - cwilson/AB-125
 
@@ -979,6 +1038,15 @@ Some branches:
 git:
   branchPrefix: "firstlast/"
 ```
+
+It's possible to use a dynamic prefix by using the `runCommand` function:
+
+```yaml
+git:
+  branchPrefix: "firstlast/{{ runCommand "date +\"%Y/%-m\"" }}/"
+```
+
+This would produce something like: `firstlast/2025/4/`
 
 ## Custom git log command
 

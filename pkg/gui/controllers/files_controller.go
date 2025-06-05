@@ -3,8 +3,10 @@ package controllers
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
+	"github.com/jesseduffield/generics/set"
 	"github.com/jesseduffield/gocui"
 	"github.com/jesseduffield/lazygit/pkg/commands/git_commands"
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
@@ -207,33 +209,9 @@ func (self *FilesController) GetKeybindings(opts types.KeybindingsOpts) []*types
 func (self *FilesController) GetMouseKeybindings(opts types.KeybindingsOpts) []*gocui.ViewMouseBinding {
 	return []*gocui.ViewMouseBinding{
 		{
-			ViewName:    "main",
-			Key:         gocui.MouseLeft,
-			Handler:     self.onClickMain,
-			FocusedView: self.context().GetViewName(),
-		},
-		{
-			ViewName:    "patchBuilding",
-			Key:         gocui.MouseLeft,
-			Handler:     self.onClickMain,
-			FocusedView: self.context().GetViewName(),
-		},
-		{
 			ViewName:    "mergeConflicts",
 			Key:         gocui.MouseLeft,
 			Handler:     self.onClickMain,
-			FocusedView: self.context().GetViewName(),
-		},
-		{
-			ViewName:    "secondary",
-			Key:         gocui.MouseLeft,
-			Handler:     self.onClickSecondary,
-			FocusedView: self.context().GetViewName(),
-		},
-		{
-			ViewName:    "patchBuildingSecondary",
-			Key:         gocui.MouseLeft,
-			Handler:     self.onClickSecondary,
 			FocusedView: self.context().GetViewName(),
 		},
 	}
@@ -266,14 +244,41 @@ func (self *FilesController) GetOnRenderToMain() func() {
 					self.c.Helpers().MergeConflicts.Render()
 					return
 				}
+			} else if node.File != nil && node.File.HasMergeConflicts {
+				opts := types.RefreshMainOpts{
+					Pair: self.c.MainViewPairs().Normal,
+					Main: &types.ViewUpdateOpts{
+						Title:    self.c.Tr.DiffTitle,
+						SubTitle: self.c.Helpers().Diff.IgnoringWhitespaceSubTitle(),
+					},
+				}
+				message := node.File.GetMergeStateDescription(self.c.Tr)
+				message += "\n\n" + fmt.Sprintf(self.c.Tr.MergeConflictPressEnterToResolve,
+					self.c.UserConfig().Keybinding.Universal.GoInto)
+				if self.c.Views().Main.InnerWidth() > 70 {
+					// If the main view is very wide, wrap the message to increase readability
+					lines, _, _ := utils.WrapViewLinesToWidth(true, false, message, 70, 4)
+					message = strings.Join(lines, "\n")
+				}
+				if node.File.ShortStatus == "DU" || node.File.ShortStatus == "UD" {
+					cmdObj := self.c.Git().Diff.DiffCmdObj([]string{"--base", "--", node.GetPath()})
+					task := types.NewRunPtyTask(cmdObj.GetCmd())
+					task.Prefix = message + "\n\n"
+					if node.File.ShortStatus == "DU" {
+						task.Prefix += self.c.Tr.MergeConflictIncomingDiff
+					} else {
+						task.Prefix += self.c.Tr.MergeConflictCurrentDiff
+					}
+					task.Prefix += "\n\n"
+					opts.Main.Task = task
+				} else {
+					opts.Main.Task = types.NewRenderStringTask(message)
+				}
+				self.c.RenderToMainViews(opts)
+				return
 			}
 
 			self.c.Helpers().MergeConflicts.ResetMergeState()
-
-			pair := self.c.MainViewPairs().Normal
-			if node.File != nil {
-				pair = self.c.MainViewPairs().Staging
-			}
 
 			split := self.c.UserConfig().Gui.SplitDiff == "always" || (node.GetHasUnstagedChanges() && node.GetHasStagedChanges())
 			mainShowsStaged := !split && node.GetHasStagedChanges()
@@ -284,7 +289,7 @@ func (self *FilesController) GetOnRenderToMain() func() {
 				title = self.c.Tr.StagedChanges
 			}
 			refreshOpts := types.RefreshMainOpts{
-				Pair: pair,
+				Pair: self.c.MainViewPairs().Normal,
 				Main: &types.ViewUpdateOpts{
 					Task:     types.NewRunPtyTask(cmdObj.GetCmd()),
 					SubTitle: self.c.Helpers().Diff.IgnoringWhitespaceSubTitle(),
@@ -316,6 +321,16 @@ func (self *FilesController) GetOnClick() func() error {
 	return self.withItemGraceful(func(node *filetree.FileNode) error {
 		return self.press([]*filetree.FileNode{node})
 	})
+}
+
+func (self *FilesController) GetOnClickFocusedMainView() func(mainViewName string, clickedLineIdx int) error {
+	return func(mainViewName string, clickedLineIdx int) error {
+		node := self.getSelectedItem()
+		if node != nil && node.File != nil {
+			return self.EnterFile(types.OnFocusOpts{ClickedWindowName: mainViewName, ClickedViewLineIdx: clickedLineIdx})
+		}
+		return nil
+	}
 }
 
 // if we are dealing with a status for which there is no key in this map,
@@ -372,7 +387,7 @@ func (self *FilesController) optimisticChange(nodes []*filetree.FileNode, optimi
 		err := node.ForEachFile(func(f *models.File) error {
 			// can't act on the file itself: we need to update the original model file
 			for _, modelFile := range self.c.Model().Files {
-				if modelFile.Name == f.Name {
+				if modelFile.Path == f.Path {
 					if optimisticChangeFn(modelFile) {
 						rerender = true
 					}
@@ -410,7 +425,7 @@ func (self *FilesController) pressWithLock(selectedNodes []*filetree.FileNode) e
 
 	toPaths := func(nodes []*filetree.FileNode) []string {
 		return lo.Map(nodes, func(node *filetree.FileNode, _ int) string {
-			return node.Path
+			return node.GetPath()
 		})
 	}
 
@@ -421,13 +436,19 @@ func (self *FilesController) pressWithLock(selectedNodes []*filetree.FileNode) e
 	unstagedSelectedNodes := filterNodesHaveUnstagedChanges(selectedNodes)
 
 	if len(unstagedSelectedNodes) > 0 {
+		var extraArgs []string
+
+		if self.context().GetFilter() == filetree.DisplayTracked {
+			extraArgs = []string{"-u"}
+		}
+
 		self.c.LogAction(self.c.Tr.Actions.StageFile)
 
 		if err := self.optimisticChange(unstagedSelectedNodes, self.optimisticStage); err != nil {
 			return err
 		}
 
-		if err := self.c.Git().WorkingTree.StageFiles(toPaths(unstagedSelectedNodes)); err != nil {
+		if err := self.c.Git().WorkingTree.StageFiles(toPaths(unstagedSelectedNodes), extraArgs); err != nil {
 			return err
 		}
 	} else {
@@ -531,11 +552,58 @@ func (self *FilesController) EnterFile(opts types.OnFocusOpts) error {
 		return self.switchToMerge()
 	}
 	if file.HasMergeConflicts {
-		return errors.New(self.c.Tr.FileStagingRequirements)
+		return self.handleNonInlineConflict(file)
 	}
 
-	self.c.Context().Push(self.c.Contexts().Staging, opts)
+	context := lo.Ternary(opts.ClickedWindowName == "secondary", self.c.Contexts().StagingSecondary, self.c.Contexts().Staging)
+	self.c.Context().Push(context, opts)
 	return nil
+}
+
+func (self *FilesController) handleNonInlineConflict(file *models.File) error {
+	handle := func(command func(command string) error, logText string) error {
+		self.c.LogAction(logText)
+		if err := command(file.GetPath()); err != nil {
+			return err
+		}
+		return self.c.Refresh(types.RefreshOptions{Scope: []types.RefreshableView{types.FILES}})
+	}
+	keepItem := &types.MenuItem{
+		Label: self.c.Tr.MergeConflictKeepFile,
+		OnPress: func() error {
+			return handle(self.c.Git().WorkingTree.StageFile, self.c.Tr.Actions.ResolveConflictByKeepingFile)
+		},
+		Key: 'k',
+	}
+	deleteItem := &types.MenuItem{
+		Label: self.c.Tr.MergeConflictDeleteFile,
+		OnPress: func() error {
+			return handle(self.c.Git().WorkingTree.RemoveConflictedFile, self.c.Tr.Actions.ResolveConflictByDeletingFile)
+		},
+		Key: 'd',
+	}
+	items := []*types.MenuItem{}
+	switch file.ShortStatus {
+	case "DD":
+		// For "both deleted" conflicts, deleting the file is the only reasonable thing you can do.
+		// Restoring to the state before deletion is not the responsibility of a conflict resolution tool.
+		items = append(items, deleteItem)
+	case "DU", "UD":
+		// For these, we put the delete option first because it's the most common one,
+		// even if it's more destructive.
+		items = append(items, deleteItem, keepItem)
+	case "AU", "UA":
+		// For these, we put the keep option first because it's less destructive,
+		// and the chances between keep and delete are 50/50.
+		items = append(items, keepItem, deleteItem)
+	default:
+		panic("should only be called if there's a merge conflict")
+	}
+	return self.c.Menu(types.CreateMenuOptions{
+		Title:  self.c.Tr.MergeConflictsTitle,
+		Prompt: file.GetMergeStateDescription(self.c.Tr),
+		Items:  items,
+	})
 }
 
 func (self *FilesController) toggleStagedAll() error {
@@ -743,11 +811,11 @@ func (self *FilesController) handleAmendCommitPress() error {
 func (self *FilesController) isResolvingConflicts() bool {
 	commits := self.c.Model().Commits
 	for _, c := range commits {
-		if c.Status != models.StatusRebasing {
-			break
-		}
-		if c.Action == models.ActionConflict {
+		if c.Status == models.StatusConflicted {
 			return true
+		}
+		if !c.IsTODO() {
+			break
 		}
 	}
 	return false
@@ -875,7 +943,7 @@ func (self *FilesController) openDiffTool(node *filetree.FileNode) error {
 	return self.c.RunSubprocessAndRefresh(
 		self.c.Git().Diff.OpenDiffToolCmdObj(
 			git_commands.DiffToolCmdOptions{
-				Filepath:    node.Path,
+				Filepath:    node.GetPath(),
 				FromCommit:  fromCommit,
 				ToCommit:    "",
 				Reverse:     reverse,
@@ -891,7 +959,7 @@ func (self *FilesController) switchToMerge() error {
 		return nil
 	}
 
-	return self.c.Helpers().MergeConflicts.SwitchToMerge(file.Name)
+	return self.c.Helpers().MergeConflicts.SwitchToMerge(file.Path)
 }
 
 func (self *FilesController) createStashMenu() error {
@@ -970,10 +1038,10 @@ func (self *FilesController) openCopyMenu() error {
 		DisabledReason: self.require(self.singleItemSelected())(),
 		Key:            'n',
 	}
-	copyPathItem := &types.MenuItem{
-		Label: self.c.Tr.CopyFilePath,
+	copyRelativePathItem := &types.MenuItem{
+		Label: self.c.Tr.CopyRelativeFilePath,
 		OnPress: func() error {
-			if err := self.c.OS().CopyToClipboard(node.Path); err != nil {
+			if err := self.c.OS().CopyToClipboard(node.GetPath()); err != nil {
 				return err
 			}
 			self.c.Toast(self.c.Tr.FilePathCopiedToast)
@@ -981,6 +1049,18 @@ func (self *FilesController) openCopyMenu() error {
 		},
 		DisabledReason: self.require(self.singleItemSelected())(),
 		Key:            'p',
+	}
+	copyAbsolutePathItem := &types.MenuItem{
+		Label: self.c.Tr.CopyAbsoluteFilePath,
+		OnPress: func() error {
+			if err := self.c.OS().CopyToClipboard(filepath.Join(self.c.Git().RepoPaths.RepoPath(), node.GetPath())); err != nil {
+				return err
+			}
+			self.c.Toast(self.c.Tr.FilePathCopiedToast)
+			return nil
+		},
+		DisabledReason: self.require(self.singleItemSelected())(),
+		Key:            'P',
 	}
 	copyFileDiffItem := &types.MenuItem{
 		Label:   self.c.Tr.CopySelectedDiff,
@@ -1038,7 +1118,8 @@ func (self *FilesController) openCopyMenu() error {
 		Title: self.c.Tr.CopyToClipboardMenu,
 		Items: []*types.MenuItem{
 			copyNameItem,
-			copyPathItem,
+			copyRelativePathItem,
+			copyAbsolutePathItem,
 			copyFileDiffItem,
 			copyAllDiff,
 		},
@@ -1063,7 +1144,7 @@ func (self *FilesController) stash() error {
 }
 
 func (self *FilesController) createResetToUpstreamMenu() error {
-	return self.c.Helpers().Refs.CreateGitResetMenu("@{upstream}")
+	return self.c.Helpers().Refs.CreateGitResetMenu("@{upstream}", "@{upstream}")
 }
 
 func (self *FilesController) handleToggleDirCollapsed() error {
@@ -1072,7 +1153,7 @@ func (self *FilesController) handleToggleDirCollapsed() error {
 		return nil
 	}
 
-	self.context().FileTreeViewModel.ToggleCollapsed(node.GetPath())
+	self.context().FileTreeViewModel.ToggleCollapsed(node.GetInternalPath())
 
 	self.c.PostRefreshUpdate(self.c.Contexts().Files)
 
@@ -1106,30 +1187,23 @@ func (self *FilesController) onClickMain(opts gocui.ViewMouseBindingOpts) error 
 	return self.EnterFile(types.OnFocusOpts{ClickedWindowName: "main", ClickedViewLineIdx: opts.Y})
 }
 
-func (self *FilesController) onClickSecondary(opts gocui.ViewMouseBindingOpts) error {
-	return self.EnterFile(types.OnFocusOpts{ClickedWindowName: "secondary", ClickedViewLineIdx: opts.Y})
-}
-
 func (self *FilesController) fetch() error {
 	return self.c.WithWaitingStatus(self.c.Tr.FetchingStatus, func(task gocui.Task) error {
-		if err := self.fetchAux(task); err != nil {
-			return err
+		self.c.LogAction("Fetch")
+		err := self.c.Git().Sync.Fetch(task)
+
+		if err != nil && strings.Contains(err.Error(), "exit status 128") {
+			return errors.New(self.c.Tr.PassUnameWrong)
 		}
-		return self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
+
+		_ = self.c.Refresh(types.RefreshOptions{Scope: []types.RefreshableView{types.BRANCHES, types.COMMITS, types.REMOTES, types.TAGS}, Mode: types.SYNC})
+
+		if err == nil {
+			err = self.c.Helpers().BranchesHelper.AutoForwardBranches()
+		}
+
+		return err
 	})
-}
-
-func (self *FilesController) fetchAux(task gocui.Task) (err error) {
-	self.c.LogAction("Fetch")
-	err = self.c.Git().Sync.Fetch(task)
-
-	if err != nil && strings.Contains(err.Error(), "exit status 128") {
-		return errors.New(self.c.Tr.PassUnameWrong)
-	}
-
-	_ = self.c.Refresh(types.RefreshOptions{Scope: []types.RefreshableView{types.BRANCHES, types.COMMITS, types.REMOTES, types.TAGS}, Mode: types.ASYNC})
-
-	return err
 }
 
 // Couldn't think of a better term than 'normalised'. Alas.
@@ -1174,13 +1248,36 @@ func filterNodesHaveUnstagedChanges(nodes []*filetree.FileNode) []*filetree.File
 	})
 }
 
+func findSubmoduleNode(nodes []*filetree.FileNode, submodules []*models.SubmoduleConfig) *models.File {
+	for _, node := range nodes {
+		submoduleNode := node.FindFirstFileBy(func(f *models.File) bool {
+			return f.IsSubmodule(submodules)
+		})
+		if submoduleNode != nil {
+			return submoduleNode
+		}
+	}
+	return nil
+}
+
 func (self *FilesController) canRemove(selectedNodes []*filetree.FileNode) *types.DisabledReason {
+	// Return disabled if the selection contains multiple changed items and includes a submodule change.
 	submodules := self.c.Model().Submodules
-	submoduleCount := lo.CountBy(selectedNodes, func(node *filetree.FileNode) bool {
-		return node.File != nil && node.File.IsSubmodule(submodules)
-	})
-	if submoduleCount > 0 && len(selectedNodes) > 1 {
-		return &types.DisabledReason{Text: self.c.Tr.RangeSelectNotSupportedForSubmodules}
+	hasFiles := false
+	uniqueSelectedSubmodules := set.New[*models.SubmoduleConfig]()
+
+	for _, node := range selectedNodes {
+		_ = node.ForEachFile(func(f *models.File) error {
+			if submodule := f.SubmoduleConfig(submodules); submodule != nil {
+				uniqueSelectedSubmodules.Add(submodule)
+			} else {
+				hasFiles = true
+			}
+			return nil
+		})
+		if uniqueSelectedSubmodules.Len() > 0 && (hasFiles || uniqueSelectedSubmodules.Len() > 1) {
+			return &types.DisabledReason{Text: self.c.Tr.MultiSelectNotSupportedForSubmodules}
+		}
 	}
 
 	return nil
@@ -1189,11 +1286,13 @@ func (self *FilesController) canRemove(selectedNodes []*filetree.FileNode) *type
 func (self *FilesController) remove(selectedNodes []*filetree.FileNode) error {
 	submodules := self.c.Model().Submodules
 
+	selectedNodes = normalisedSelectedNodes(selectedNodes)
+
 	// If we have one submodule then we must only have one submodule or `canRemove` would have
 	// returned an error
-	firstNode := selectedNodes[0]
-	if firstNode.File != nil && firstNode.File.IsSubmodule(submodules) {
-		submodule := firstNode.File.SubmoduleConfig(submodules)
+	submoduleNode := findSubmoduleNode(selectedNodes, submodules)
+	if submoduleNode != nil {
+		submodule := submoduleNode.SubmoduleConfig(submodules)
 
 		menuItems := []*types.MenuItem{
 			{
@@ -1204,10 +1303,8 @@ func (self *FilesController) remove(selectedNodes []*filetree.FileNode) error {
 			},
 		}
 
-		return self.c.Menu(types.CreateMenuOptions{Title: firstNode.GetPath(), Items: menuItems})
+		return self.c.Menu(types.CreateMenuOptions{Title: submoduleNode.GetPath(), Items: menuItems})
 	}
-
-	selectedNodes = normalisedSelectedNodes(selectedNodes)
 
 	discardAllChangesItem := types.MenuItem{
 		Label: self.c.Tr.DiscardAllChanges,

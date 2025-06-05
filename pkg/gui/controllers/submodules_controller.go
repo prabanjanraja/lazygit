@@ -248,6 +248,20 @@ func (self *SubmodulesController) openBulkActionsMenu() error {
 				Key: 'u',
 			},
 			{
+				LabelColumns: []string{self.c.Tr.BulkUpdateRecursiveSubmodules, style.FgYellow.Sprint(self.c.Git().Submodule.BulkUpdateRecursivelyCmdObj().ToString())},
+				OnPress: func() error {
+					return self.c.WithWaitingStatus(self.c.Tr.RunningCommand, func(gocui.Task) error {
+						self.c.LogAction(self.c.Tr.Actions.BulkUpdateRecursiveSubmodules)
+						if err := self.c.Git().Submodule.BulkUpdateRecursivelyCmdObj().Run(); err != nil {
+							return err
+						}
+
+						return self.c.Refresh(types.RefreshOptions{Scope: []types.RefreshableView{types.SUBMODULES}})
+					})
+				},
+				Key: 'r',
+			},
+			{
 				LabelColumns: []string{self.c.Tr.BulkDeinitSubmodules, style.FgRed.Sprint(self.c.Git().Submodule.BulkDeinitCmdObj().ToString())},
 				OnPress: func() error {
 					return self.c.WithWaitingStatus(self.c.Tr.RunningCommand, func(gocui.Task) error {
@@ -295,7 +309,7 @@ func (self *SubmodulesController) remove(submodule *models.SubmoduleConfig) erro
 }
 
 func (self *SubmodulesController) easterEgg() error {
-	self.c.Context().Push(self.c.Contexts().Snake)
+	self.c.Context().Push(self.c.Contexts().Snake, types.OnFocusOpts{})
 	return nil
 }
 

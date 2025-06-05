@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/jesseduffield/gocui"
-	"github.com/jesseduffield/lazygit/pkg/commands/types/enums"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
 	"github.com/jesseduffield/lazygit/pkg/utils"
 )
@@ -78,7 +77,7 @@ func (self *UndoController) reflogUndo() error {
 	undoEnvVars := []string{"GIT_REFLOG_ACTION=[lazygit undo]"}
 	undoingStatus := self.c.Tr.UndoingStatus
 
-	if self.c.Git().Status.WorkingTreeState() == enums.REBASE_MODE_REBASING {
+	if self.c.Git().Status.WorkingTreeState().Any() {
 		return errors.New(self.c.Tr.CantUndoWhileRebasing)
 	}
 
@@ -142,7 +141,7 @@ func (self *UndoController) reflogRedo() error {
 	redoEnvVars := []string{"GIT_REFLOG_ACTION=[lazygit redo]"}
 	redoingStatus := self.c.Tr.RedoingStatus
 
-	if self.c.Git().Status.WorkingTreeState() == enums.REBASE_MODE_REBASING {
+	if self.c.Git().Status.WorkingTreeState().Any() {
 		return errors.New(self.c.Tr.CantRedoWhileRebasing)
 	}
 
@@ -208,7 +207,7 @@ func (self *UndoController) parseReflogForActions(onUserAction func(counter int,
 
 		prevCommitHash := ""
 		if len(reflogCommits)-1 >= reflogCommitIdx+1 {
-			prevCommitHash = reflogCommits[reflogCommitIdx+1].Hash
+			prevCommitHash = reflogCommits[reflogCommitIdx+1].Hash()
 		}
 
 		if rebaseFinishCommitHash == "" {
@@ -217,11 +216,11 @@ func (self *UndoController) parseReflogForActions(onUserAction func(counter int,
 			} else if ok, _ := utils.FindStringSubmatch(reflogCommit.Name, `^\[lazygit redo\]`); ok {
 				counter--
 			} else if ok, _ := utils.FindStringSubmatch(reflogCommit.Name, `^rebase (-i )?\(abort\)|^rebase (-i )?\(finish\)`); ok {
-				rebaseFinishCommitHash = reflogCommit.Hash
+				rebaseFinishCommitHash = reflogCommit.Hash()
 			} else if ok, match := utils.FindStringSubmatch(reflogCommit.Name, `^checkout: moving from ([\S]+) to ([\S]+)`); ok {
 				action = &reflogAction{kind: CHECKOUT, from: match[1], to: match[2]}
 			} else if ok, _ := utils.FindStringSubmatch(reflogCommit.Name, `^commit|^reset: moving to|^pull`); ok {
-				action = &reflogAction{kind: COMMIT, from: prevCommitHash, to: reflogCommit.Hash}
+				action = &reflogAction{kind: COMMIT, from: prevCommitHash, to: reflogCommit.Hash()}
 			} else if ok, _ := utils.FindStringSubmatch(reflogCommit.Name, `^rebase (-i )?\(start\)`); ok {
 				// if we're here then we must be currently inside an interactive rebase
 				action = &reflogAction{kind: CURRENT_REBASE, from: prevCommitHash}

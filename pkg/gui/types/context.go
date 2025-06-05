@@ -94,6 +94,9 @@ type IBaseContext interface {
 	// our list controller can come along and wrap it in a list-specific click handler.
 	// We'll need to think of a better way to do this.
 	AddOnClickFn(func() error)
+	// Likewise for the focused main view: we need this to communicate between a
+	// side panel controller and the focused main view controller.
+	AddOnClickFocusedMainViewFn(func(mainViewName string, clickedLineIdx int) error)
 
 	AddOnRenderToMainFn(func())
 	AddOnFocusFn(func(OnFocusOpts))
@@ -105,6 +108,7 @@ type Context interface {
 
 	HandleFocus(opts OnFocusOpts)
 	HandleFocusLost(opts OnFocusLostOpts)
+	FocusLine()
 	HandleRender()
 	HandleRenderToMain()
 }
@@ -173,10 +177,11 @@ type IListContext interface {
 	ViewIndexToModelIndex(int) int
 	ModelIndexToViewIndex(int) int
 
-	FocusLine()
 	IsListContext() // used for type switch
 	RangeSelectEnabled() bool
 	RenderOnlyVisibleLines() bool
+
+	IndexForGotoBottom() int
 }
 
 type IPatchExplorerContext interface {
@@ -240,6 +245,7 @@ type HasKeybindings interface {
 	GetKeybindings(opts KeybindingsOpts) []*Binding
 	GetMouseKeybindings(opts KeybindingsOpts) []*gocui.ViewMouseBinding
 	GetOnClick() func() error
+	GetOnClickFocusedMainView() func(mainViewName string, clickedLineIdx int) error
 	GetOnRenderToMain() func()
 	GetOnFocus() func(OnFocusOpts)
 	GetOnFocusLost() func(OnFocusLostOpts)
@@ -286,7 +292,7 @@ type ListItem interface {
 }
 
 type IContextMgr interface {
-	Push(context Context, opts ...OnFocusOpts)
+	Push(context Context, opts OnFocusOpts)
 	Pop()
 	Replace(context Context)
 	Activate(context Context, opts OnFocusOpts)
@@ -294,6 +300,7 @@ type IContextMgr interface {
 	CurrentStatic() Context
 	CurrentSide() Context
 	CurrentPopup() []Context
+	NextInStack(context Context) Context
 	IsCurrent(c Context) bool
 	IsCurrentOrParent(c Context) bool
 	ForEach(func(Context))

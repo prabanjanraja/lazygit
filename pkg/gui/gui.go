@@ -331,6 +331,8 @@ func (gui *Gui) onNewRepo(startArgs appTypes.StartArgs, contextKey types.Context
 
 	gui.g.SetFocusHandler(func(Focused bool) error {
 		if Focused {
+			gui.git.Config.DropConfigCache()
+
 			oldConfig := gui.Config.GetUserConfig()
 			reloadErr, didChange := gui.Config.ReloadChangedUserConfigFiles()
 			if didChange && reloadErr == nil {
@@ -392,7 +394,7 @@ func (gui *Gui) onNewRepo(startArgs appTypes.StartArgs, contextKey types.Context
 		}
 	}
 
-	gui.c.Context().Push(contextToPush)
+	gui.c.Context().Push(contextToPush, types.OnFocusOpts{})
 
 	return nil
 }
@@ -521,6 +523,13 @@ func (gui *Gui) checkForChangedConfigsThatDontAutoReload(oldConfig *config.UserC
 // resetState reuses the repo state from our repo state map, if the repo was
 // open before; otherwise it creates a new one.
 func (gui *Gui) resetState(startArgs appTypes.StartArgs) types.Context {
+	// Un-highlight the current view if there is one. The reason we do this is
+	// that the repo we are switching to might have a different view focused,
+	// and would then show an inactive highlight for the previous view.
+	if oldCurrentView := gui.g.CurrentView(); oldCurrentView != nil {
+		oldCurrentView.Highlight = false
+	}
+
 	worktreePath := gui.git.RepoPaths.WorktreePath()
 
 	if state := gui.RepoStateMap[Repo(worktreePath)]; state != nil {
@@ -556,6 +565,7 @@ func (gui *Gui) resetState(startArgs appTypes.StartArgs) types.Context {
 			FilesTrie:             patricia.NewTrie(),
 			Authors:               map[string]*models.Author{},
 			MainBranches:          git_commands.NewMainBranches(gui.c.Common, gui.os.Cmd),
+			HashPool:              &utils.StringPool{},
 		},
 		Modes: &types.Modes{
 			Filtering:        filtering.New(startArgs.FilterPath, ""),
@@ -574,6 +584,15 @@ func (gui *Gui) resetState(startArgs appTypes.StartArgs) types.Context {
 	gui.RepoStateMap[Repo(worktreePath)] = gui.State
 
 	return initialContext(contextTree, startArgs)
+}
+
+func (self *Gui) getViewBufferManagerForView(view *gocui.View) *tasks.ViewBufferManager {
+	manager, ok := self.viewBufferManagerMap[view.Name()]
+	if !ok {
+		return nil
+	}
+
+	return manager
 }
 
 func initialWindowViewNameMap(contextTree *context.ContextTree) *utils.ThreadSafeMap[string, string] {
@@ -920,7 +939,7 @@ func (gui *Gui) checkForDeprecatedEditConfigs() {
 }
 
 // returns whether command exited without error or not
-func (gui *Gui) runSubprocessWithSuspenseAndRefresh(subprocess oscommands.ICmdObj) error {
+func (gui *Gui) runSubprocessWithSuspenseAndRefresh(subprocess *oscommands.CmdObj) error {
 	_, err := gui.runSubprocessWithSuspense(subprocess)
 	if err != nil {
 		return err
@@ -934,7 +953,7 @@ func (gui *Gui) runSubprocessWithSuspenseAndRefresh(subprocess oscommands.ICmdOb
 }
 
 // returns whether command exited without error or not
-func (gui *Gui) runSubprocessWithSuspense(subprocess oscommands.ICmdObj) (bool, error) {
+func (gui *Gui) runSubprocessWithSuspense(subprocess *oscommands.CmdObj) (bool, error) {
 	gui.Mutexes.SubprocessMutex.Lock()
 	defer gui.Mutexes.SubprocessMutex.Unlock()
 
@@ -958,7 +977,7 @@ func (gui *Gui) runSubprocessWithSuspense(subprocess oscommands.ICmdObj) (bool, 
 	return true, nil
 }
 
-func (gui *Gui) runSubprocess(cmdObj oscommands.ICmdObj) error { //nolint:unparam
+func (gui *Gui) runSubprocess(cmdObj *oscommands.CmdObj) error { //nolint:unparam
 	gui.LogCommand(cmdObj.ToString(), true)
 
 	subprocess := cmdObj.GetCmd()

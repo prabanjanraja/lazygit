@@ -5,18 +5,13 @@ import (
 	"fmt"
 	"regexp"
 
+	"github.com/jesseduffield/lazygit/pkg/commands/git_commands"
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
 	"github.com/jesseduffield/lazygit/pkg/config"
 	"github.com/jesseduffield/lazygit/pkg/gui/context"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
+	"github.com/samber/lo"
 )
-
-type IWorkingTreeHelper interface {
-	AnyStagedFiles() bool
-	AnyTrackedFiles() bool
-	IsWorkingTreeDirty() bool
-	FileForSubmodule(submodule *models.SubmoduleConfig) *models.File
-}
 
 type WorkingTreeHelper struct {
 	c             *HelperCommon
@@ -40,25 +35,27 @@ func NewWorkingTreeHelper(
 }
 
 func (self *WorkingTreeHelper) AnyStagedFiles() bool {
-	for _, file := range self.c.Model().Files {
-		if file.HasStagedChanges {
-			return true
-		}
-	}
-	return false
+	return AnyStagedFiles(self.c.Model().Files)
+}
+
+func AnyStagedFiles(files []*models.File) bool {
+	return lo.SomeBy(files, func(f *models.File) bool { return f.HasStagedChanges })
 }
 
 func (self *WorkingTreeHelper) AnyTrackedFiles() bool {
-	for _, file := range self.c.Model().Files {
-		if file.Tracked {
-			return true
-		}
-	}
-	return false
+	return AnyTrackedFiles(self.c.Model().Files)
+}
+
+func AnyTrackedFiles(files []*models.File) bool {
+	return lo.SomeBy(files, func(f *models.File) bool { return f.Tracked })
 }
 
 func (self *WorkingTreeHelper) IsWorkingTreeDirty() bool {
-	return self.AnyStagedFiles() || self.AnyTrackedFiles()
+	return IsWorkingTreeDirty(self.c.Model().Files)
+}
+
+func IsWorkingTreeDirty(files []*models.File) bool {
+	return AnyStagedFiles(files) || AnyTrackedFiles(files)
 }
 
 func (self *WorkingTreeHelper) FileForSubmodule(submodule *models.SubmoduleConfig) *models.File {
@@ -86,7 +83,7 @@ func (self *WorkingTreeHelper) OpenMergeTool() error {
 	return nil
 }
 
-func (self *WorkingTreeHelper) HandleCommitPressWithMessage(initialMessage string) error {
+func (self *WorkingTreeHelper) HandleCommitPressWithMessage(initialMessage string, forceSkipHooks bool) error {
 	return self.WithEnsureCommittableFiles(func() error {
 		self.commitsHelper.OpenCommitMessagePanel(
 			&OpenCommitMessagePanelOpts{
@@ -95,8 +92,14 @@ func (self *WorkingTreeHelper) HandleCommitPressWithMessage(initialMessage strin
 				SummaryTitle:     self.c.Tr.CommitSummaryTitle,
 				DescriptionTitle: self.c.Tr.CommitDescriptionTitle,
 				PreserveMessage:  true,
-				OnConfirm:        self.handleCommit,
-				OnSwitchToEditor: self.switchFromCommitMessagePanelToEditor,
+				OnConfirm: func(summary string, description string) error {
+					return self.handleCommit(summary, description, forceSkipHooks)
+				},
+				OnSwitchToEditor: func(filepath string) error {
+					return self.switchFromCommitMessagePanelToEditor(filepath, forceSkipHooks)
+				},
+				ForceSkipHooks:  forceSkipHooks,
+				SkipHooksPrefix: self.c.UserConfig().Git.SkipHookPrefix,
 			},
 		)
 
@@ -104,27 +107,28 @@ func (self *WorkingTreeHelper) HandleCommitPressWithMessage(initialMessage strin
 	})
 }
 
-func (self *WorkingTreeHelper) handleCommit(summary string, description string) error {
-	cmdObj := self.c.Git().Commit.CommitCmdObj(summary, description)
+func (self *WorkingTreeHelper) handleCommit(summary string, description string, forceSkipHooks bool) error {
+	cmdObj := self.c.Git().Commit.CommitCmdObj(summary, description, forceSkipHooks)
 	self.c.LogAction(self.c.Tr.Actions.Commit)
-	return self.gpgHelper.WithGpgHandling(cmdObj, self.c.Tr.CommittingStatus, func() error {
-		self.commitsHelper.OnCommitSuccess()
-		return nil
-	})
+	return self.gpgHelper.WithGpgHandling(cmdObj, git_commands.CommitGpgSign, self.c.Tr.CommittingStatus,
+		func() error {
+			self.commitsHelper.ClearPreservedCommitMessage()
+			return nil
+		}, nil)
 }
 
-func (self *WorkingTreeHelper) switchFromCommitMessagePanelToEditor(filepath string) error {
+func (self *WorkingTreeHelper) switchFromCommitMessagePanelToEditor(filepath string, forceSkipHooks bool) error {
 	// We won't be able to tell whether the commit was successful, because
 	// RunSubprocessAndRefresh doesn't return the error (it opens an error alert
 	// itself and returns nil on error). But even if we could, we wouldn't have
 	// access to the last message that the user typed, and it might be very
 	// different from what was last in the commit panel. So the best we can do
 	// here is to always clear the remembered commit message.
-	self.commitsHelper.OnCommitSuccess()
+	self.commitsHelper.ClearPreservedCommitMessage()
 
 	self.c.LogAction(self.c.Tr.Actions.Commit)
 	return self.c.RunSubprocessAndRefresh(
-		self.c.Git().Commit.CommitInEditorWithMessageFileCmdObj(filepath),
+		self.c.Git().Commit.CommitInEditorWithMessageFileCmdObj(filepath, forceSkipHooks),
 	)
 }
 
@@ -132,6 +136,10 @@ func (self *WorkingTreeHelper) switchFromCommitMessagePanelToEditor(filepath str
 // their editor rather than via the popup panel
 func (self *WorkingTreeHelper) HandleCommitEditorPress() error {
 	return self.WithEnsureCommittableFiles(func() error {
+		// See reasoning in switchFromCommitMessagePanelToEditor for why it makes sense
+		// to clear this message before calling into the editor
+		self.commitsHelper.ClearPreservedCommitMessage()
+
 		self.c.LogAction(self.c.Tr.Actions.Commit)
 		return self.c.RunSubprocessAndRefresh(
 			self.c.Git().Commit.CommitEditorCmdObj(),
@@ -140,12 +148,13 @@ func (self *WorkingTreeHelper) HandleCommitEditorPress() error {
 }
 
 func (self *WorkingTreeHelper) HandleWIPCommitPress() error {
-	skipHookPrefix := self.c.UserConfig().Git.SkipHookPrefix
-	if skipHookPrefix == "" {
-		return errors.New(self.c.Tr.SkipHookPrefixNotConfigured)
+	var initialMessage string
+	preservedMessage := self.c.Contexts().CommitMessage.GetPreservedMessageAndLogError()
+	if preservedMessage == "" {
+		// Use the skipHook prefix only if we don't have a preserved message
+		initialMessage = self.c.UserConfig().Git.SkipHookPrefix
 	}
-
-	return self.HandleCommitPressWithMessage(skipHookPrefix)
+	return self.HandleCommitPressWithMessage(initialMessage, true)
 }
 
 func (self *WorkingTreeHelper) HandleCommitPress() error {
@@ -155,6 +164,9 @@ func (self *WorkingTreeHelper) HandleCommitPress() error {
 		commitPrefixConfigs := self.commitPrefixConfigsForRepo()
 		for _, commitPrefixConfig := range commitPrefixConfigs {
 			prefixPattern := commitPrefixConfig.Pattern
+			if prefixPattern == "" {
+				continue
+			}
 			prefixReplace := commitPrefixConfig.Replace
 			branchName := self.refHelper.GetCheckedOutRef().Name
 			rgx, err := regexp.Compile(prefixPattern)
@@ -170,7 +182,7 @@ func (self *WorkingTreeHelper) HandleCommitPress() error {
 		}
 	}
 
-	return self.HandleCommitPressWithMessage(message)
+	return self.HandleCommitPressWithMessage(message, false)
 }
 
 func (self *WorkingTreeHelper) WithEnsureCommittableFiles(handler func() error) error {

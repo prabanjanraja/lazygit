@@ -96,10 +96,6 @@
             "git fetch {{.Form.Remote}} {{.Form.Branch}} \u0026\u0026 git checkout FETCH_HEAD"
           ]
         },
-        "subprocess": {
-          "type": "boolean",
-          "description": "If true, run the command in a subprocess (e.g. if the command requires user input)"
-        },
         "prompts": {
           "items": {
             "$ref": "#/$defs/CustomCommandPrompt"
@@ -118,17 +114,20 @@
           "type": "string",
           "description": "Label for the custom command when displayed in the keybindings menu"
         },
-        "stream": {
-          "type": "boolean",
-          "description": "If true, stream the command's output to the Command Log panel"
-        },
-        "showOutput": {
-          "type": "boolean",
-          "description": "If true, show the command's output in a popup within Lazygit"
+        "output": {
+          "type": "string",
+          "enum": [
+            "none",
+            "terminal",
+            "log",
+            "logWithPty",
+            "popup"
+          ],
+          "description": "Where the output of the command should go. 'none' discards it, 'terminal' suspends lazygit and runs the command in the terminal (useful for commands that require user input), 'log' streams it to the command log, 'logWithPty' is like 'log' but runs the command in a pseudo terminal (can be useful for commands that produce colored output when the output is a terminal), and 'popup' shows it in a popup."
         },
         "outputTitle": {
           "type": "string",
-          "description": "The title to display in the popup panel if showOutput is true. If left unset, the command will be used as the title."
+          "description": "The title to display in the popup panel if output is set to 'popup'. If left unset, the command will be used as the title."
         },
         "after": {
           "$ref": "#/$defs/CustomCommandAfterHook",
@@ -263,6 +262,27 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "CustomIconsConfig": {
+      "properties": {
+        "filenames": {
+          "additionalProperties": {
+            "$ref": "#/$defs/IconProperties"
+          },
+          "type": "object",
+          "description": "Map of filenames to icon properties (icon and color)"
+        },
+        "extensions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/IconProperties"
+          },
+          "type": "object",
+          "description": "Map of file extensions (including the dot) to icon properties (icon and color)"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Custom icons for filenames and file extensions\nSee https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-files-icon--color"
+    },
     "GitConfig": {
       "properties": {
         "paging": {
@@ -304,6 +324,16 @@
           "description": "If true, periodically refresh files and submodules",
           "default": true
         },
+        "autoForwardBranches": {
+          "type": "string",
+          "enum": [
+            "none",
+            "onlyMainBranches",
+            "allBranches"
+          ],
+          "description": "If not \"none\", lazygit will automatically fast-forward local branches to match their upstream after fetching. Applies to branches that are not the currently checked out branch, and only to those that are strictly behind their upstream (as opposed to diverged).\nPossible values: 'none' | 'onlyMainBranches' | 'allBranches'",
+          "default": "onlyMainBranches"
+        },
         "fetchAll": {
           "type": "boolean",
           "description": "If true, pass the --all arg to git fetch",
@@ -319,17 +349,15 @@
           "description": "Command used when displaying the current branch git log in the main window",
           "default": "git log --graph --color=always --abbrev-commit --decorate --date=relative --pretty=medium {{branchName}} --"
         },
-        "allBranchesLogCmd": {
-          "type": "string",
-          "description": "Command used to display git log of all branches in the main window.\nDeprecated: Use `allBranchesLogCmds` instead.",
-          "default": "git log --graph --all --color=always --abbrev-commit --decorate --date=relative  --pretty=medium"
-        },
         "allBranchesLogCmds": {
           "items": {
             "type": "string"
           },
           "type": "array",
-          "description": "Commands used to display git log of all branches in the main window, they will be cycled in order of appearance"
+          "description": "Commands used to display git log of all branches in the main window, they will be cycled in order of appearance (array of strings)",
+          "default": [
+            "git log --graph --all --color=always --abbrev-commit --decorate --date=relative  --pretty=medium"
+          ]
         },
         "overrideGpg": {
           "type": "boolean",
@@ -403,6 +431,10 @@
           },
           "type": "object",
           "description": "See https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-branch-color"
+        },
+        "customIcons": {
+          "$ref": "#/$defs/CustomIconsConfig",
+          "description": "Custom icons for filenames and file extensions\nSee https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-files-icon--color"
         },
         "scrollHeight": {
           "type": "integer",
@@ -535,6 +567,11 @@
         "showFileTree": {
           "type": "boolean",
           "description": "If true, display the files in the file views as a tree. If false, display the files as a flat list.\nThis can be toggled from within Lazygit with the '`' key, but that will not change the default.",
+          "default": true
+        },
+        "showRootItemInFileTree": {
+          "type": "boolean",
+          "description": "If true, add a \"/\" root item in the file tree representing the root of the repository. It is only added when necessary, i.e. when there is more than one item at top level.",
           "default": true
         },
         "showNumstatInFilesView": {
@@ -700,6 +737,18 @@
       "type": "object",
       "description": "Config relating to the Lazygit UI"
     },
+    "IconProperties": {
+      "properties": {
+        "icon": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "KeybindingAmendAttributeConfig": {
       "properties": {
         "resetAuthor": {
@@ -751,6 +800,10 @@
         "mergeIntoCurrentBranch": {
           "type": "string",
           "default": "M"
+        },
+        "moveCommitsToNewBranch": {
+          "type": "string",
+          "default": "N"
         },
         "viewGitFlowOptions": {
           "type": "string",
@@ -901,6 +954,10 @@
         "startInteractiveRebase": {
           "type": "string",
           "default": "i"
+        },
+        "selectCommitsOfCurrentBranch": {
+          "type": "string",
+          "default": "*"
         }
       },
       "additionalProperties": false,
@@ -1161,6 +1218,14 @@
           "type": "string",
           "default": "\u003e"
         },
+        "gotoTop-alt": {
+          "type": "string",
+          "default": "\u003chome\u003e"
+        },
+        "gotoBottom-alt": {
+          "type": "string",
+          "default": "\u003cend\u003e"
+        },
         "toggleRangeSelect": {
           "type": "string",
           "default": "v"
@@ -1210,6 +1275,10 @@
             "5"
           ]
         },
+        "focusMainView": {
+          "type": "string",
+          "default": "0"
+        },
         "nextMatch": {
           "type": "string",
           "default": "n"
@@ -1245,6 +1314,10 @@
         "confirmInEditor": {
           "type": "string",
           "default": "\u003ca-enter\u003e"
+        },
+        "confirmInEditor-alt": {
+          "type": "string",
+          "default": "\u003cc-s\u003e"
         },
         "remove": {
           "type": "string",
@@ -1506,6 +1579,18 @@
           "type": "string",
           "description": "Command for opening a link. Should contain \"{{link}}\"."
         },
+        "copyToClipboardCmd": {
+          "type": "string",
+          "description": "CopyToClipboardCmd is the command for copying to clipboard.\nSee https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-command-for-copying-to-and-pasting-from-clipboard"
+        },
+        "readFromClipboardCmd": {
+          "type": "string",
+          "description": "ReadFromClipboardCmd is the command for reading the clipboard.\nSee https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-command-for-copying-to-and-pasting-from-clipboard"
+        },
+        "shellFunctionsFile": {
+          "type": "string",
+          "description": "A shell startup file containing shell aliases or shell functions. This will be sourced before running any shell commands, so that shell functions are available in the `:` command prompt or even in custom commands.\nSee https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#using-aliases-or-functions-in-shell-commands"
+        },
         "editCommand": {
           "type": "string",
           "description": "EditCommand is the command for editing a file.\nDeprecated: use Edit instead. Note that semantics are different:\nEditCommand is just the command itself, whereas Edit contains a\n\"{{filename}}\" variable."
@@ -1521,14 +1606,6 @@
         "openLinkCommand": {
           "type": "string",
           "description": "OpenLinkCommand is the command for opening a link\nDeprecated: use OpenLink instead."
-        },
-        "copyToClipboardCmd": {
-          "type": "string",
-          "description": "CopyToClipboardCmd is the command for copying to clipboard.\nSee https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-command-for-copying-to-and-pasting-from-clipboard"
-        },
-        "readFromClipboardCmd": {
-          "type": "string",
-          "description": "ReadFromClipboardCmd is the command for reading the clipboard.\nSee https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#custom-command-for-copying-to-and-pasting-from-clipboard"
         }
       },
       "additionalProperties": false,
@@ -1830,7 +1907,7 @@
           },
           "type": "array",
           "uniqueItems": true,
-          "description": "User-configured commands that can be invoked from within Lazygit"
+          "description": "User-configured commands that can be invoked from within Lazygit\nSee https://github.com/jesseduffield/lazygit/blob/master/docs/Custom_Command_Keybindings.md"
         },
         "services": {
           "additionalProperties": {

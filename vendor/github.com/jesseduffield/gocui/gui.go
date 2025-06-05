@@ -39,6 +39,9 @@ var (
 
 	// ErrQuit is used to decide if the MainLoop finished successfully.
 	ErrQuit = standardErrors.New("quit")
+
+	// ErrKeybindingNotHandled is returned when a keybinding is not handled, so that the key can be dispatched further
+	ErrKeybindingNotHandled = standardErrors.New("keybinding not handled")
 )
 
 const (
@@ -783,7 +786,7 @@ func (g *Gui) MainLoop() error {
 }
 
 func (g *Gui) handleError(err error) error {
-	if err != nil && !IsQuit(err) && g.ErrorHandler != nil {
+	if err != nil && !standardErrors.Is(err, ErrQuit) && g.ErrorHandler != nil {
 		return g.ErrorHandler(err)
 	}
 
@@ -1229,24 +1232,9 @@ func (g *Gui) draw(v *View) error {
 
 	if g.Cursor {
 		if curview := g.currentView; curview != nil {
-			vMaxX, vMaxY := curview.Size()
-			if curview.cx < 0 {
-				curview.cx = 0
-			} else if curview.cx >= vMaxX {
-				curview.cx = vMaxX - 1
-			}
-			if curview.cy < 0 {
-				curview.cy = 0
-			} else if curview.cy >= vMaxY {
-				curview.cy = vMaxY - 1
-			}
-
-			gMaxX, gMaxY := g.Size()
-			cx, cy := curview.x0+curview.cx+1, curview.y0+curview.cy+1
-			// This test probably doesn't need to be here.
-			// tcell is hiding cursor by setting coordinates outside of screen.
-			// Keeping it here for now, as I'm not 100% sure :)
-			if cx >= 0 && cx < gMaxX && cy >= 0 && cy < gMaxY {
+			vMaxX, vMaxY := curview.InnerSize()
+			if curview.cx >= 0 && curview.cx < vMaxX && curview.cy >= 0 && curview.cy < vMaxY {
+				cx, cy := curview.x0+curview.cx+1, curview.y0+curview.cy+1
 				Screen.ShowCursor(cx, cy)
 			} else {
 				Screen.HideCursor()
@@ -1510,6 +1498,8 @@ func (g *Gui) execKeybindings(v *View, ev *GocuiEvent) error {
 		}
 	}
 
+	var err error
+
 	for _, kb := range g.keybindings {
 		if kb.handler == nil {
 			continue
@@ -1518,7 +1508,13 @@ func (g *Gui) execKeybindings(v *View, ev *GocuiEvent) error {
 			continue
 		}
 		if g.matchView(v, kb) {
-			return g.execKeybinding(v, kb)
+			err = g.execKeybinding(v, kb)
+			if !errors.Is(err, ErrKeybindingNotHandled) {
+				return err
+			}
+
+			matchingParentViewKb = nil
+			break
 		}
 		if v != nil && g.matchView(v.ParentView, kb) {
 			matchingParentViewKb = kb
@@ -1528,7 +1524,10 @@ func (g *Gui) execKeybindings(v *View, ev *GocuiEvent) error {
 		}
 	}
 	if matchingParentViewKb != nil {
-		return g.execKeybinding(v.ParentView, matchingParentViewKb)
+		err = g.execKeybinding(v.ParentView, matchingParentViewKb)
+		if !errors.Is(err, ErrKeybindingNotHandled) {
+			return err
+		}
 	}
 
 	if g.currentView != nil && g.currentView.Editable && g.currentView.Editor != nil {
@@ -1539,9 +1538,9 @@ func (g *Gui) execKeybindings(v *View, ev *GocuiEvent) error {
 	}
 
 	if globalKb != nil {
-		return g.execKeybinding(v, globalKb)
+		err = g.execKeybinding(v, globalKb)
 	}
-	return nil
+	return err
 }
 
 // execKeybinding executes a given keybinding
@@ -1603,16 +1602,6 @@ func (g *Gui) isBlacklisted(k Key) bool {
 		}
 	}
 	return false
-}
-
-// IsUnknownView reports whether the contents of an error is "unknown view".
-func IsUnknownView(err error) bool {
-	return err != nil && err.Error() == ErrUnknownView.Error()
-}
-
-// IsQuit reports whether the contents of an error is "quit".
-func IsQuit(err error) bool {
-	return err != nil && err.Error() == ErrQuit.Error()
 }
 
 func (g *Gui) Suspend() error {

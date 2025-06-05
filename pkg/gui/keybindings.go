@@ -261,6 +261,42 @@ func (self *Gui) GetInitialKeybindings() ([]*types.Binding, []*gocui.ViewMouseBi
 			Handler:  self.scrollDownConfirmationPanel,
 		},
 		{
+			ViewName: "confirmation",
+			Key:      opts.GetKey(opts.Config.Universal.NextPage),
+			Modifier: gocui.ModNone,
+			Handler:  self.pageDownConfirmationPanel,
+		},
+		{
+			ViewName: "confirmation",
+			Key:      opts.GetKey(opts.Config.Universal.PrevPage),
+			Modifier: gocui.ModNone,
+			Handler:  self.pageUpConfirmationPanel,
+		},
+		{
+			ViewName: "confirmation",
+			Key:      opts.GetKey(opts.Config.Universal.GotoTop),
+			Modifier: gocui.ModNone,
+			Handler:  self.goToConfirmationPanelTop,
+		},
+		{
+			ViewName: "confirmation",
+			Key:      opts.GetKey(opts.Config.Universal.GotoTopAlt),
+			Modifier: gocui.ModNone,
+			Handler:  self.goToConfirmationPanelTop,
+		},
+		{
+			ViewName: "confirmation",
+			Key:      opts.GetKey(opts.Config.Universal.GotoBottom),
+			Modifier: gocui.ModNone,
+			Handler:  self.goToConfirmationPanelBottom,
+		},
+		{
+			ViewName: "confirmation",
+			Key:      opts.GetKey(opts.Config.Universal.GotoBottomAlt),
+			Modifier: gocui.ModNone,
+			Handler:  self.goToConfirmationPanelBottom,
+		},
+		{
 			ViewName:          "submodules",
 			Key:               opts.GetKey(opts.Config.Universal.CopyToClipboard),
 			Handler:           self.handleCopySelectedSideContextItemToClipboard,
@@ -304,6 +340,42 @@ func (self *Gui) GetInitialKeybindings() ([]*types.Binding, []*gocui.ViewMouseBi
 			Key:      opts.GetKey(opts.Config.Universal.NextItemAlt),
 			Modifier: gocui.ModNone,
 			Handler:  self.scrollDownExtra,
+		},
+		{
+			ViewName: "extras",
+			Key:      opts.GetKey(opts.Config.Universal.NextPage),
+			Modifier: gocui.ModNone,
+			Handler:  self.pageDownExtrasPanel,
+		},
+		{
+			ViewName: "extras",
+			Key:      opts.GetKey(opts.Config.Universal.PrevPage),
+			Modifier: gocui.ModNone,
+			Handler:  self.pageUpExtrasPanel,
+		},
+		{
+			ViewName: "extras",
+			Key:      opts.GetKey(opts.Config.Universal.GotoTop),
+			Modifier: gocui.ModNone,
+			Handler:  self.goToExtrasPanelTop,
+		},
+		{
+			ViewName: "extras",
+			Key:      opts.GetKey(opts.Config.Universal.GotoTopAlt),
+			Modifier: gocui.ModNone,
+			Handler:  self.goToExtrasPanelTop,
+		},
+		{
+			ViewName: "extras",
+			Key:      opts.GetKey(opts.Config.Universal.GotoBottom),
+			Modifier: gocui.ModNone,
+			Handler:  self.goToExtrasPanelBottom,
+		},
+		{
+			ViewName: "extras",
+			Key:      opts.GetKey(opts.Config.Universal.GotoBottomAlt),
+			Modifier: gocui.ModNone,
+			Handler:  self.goToExtrasPanelBottom,
 		},
 		{
 			ViewName: "extras",
@@ -451,19 +523,22 @@ func (gui *Gui) SetMouseKeybinding(binding *gocui.ViewMouseBinding) error {
 }
 
 func (gui *Gui) callKeybindingHandler(binding *types.Binding) error {
-	var disabledReason *types.DisabledReason
 	if binding.GetDisabledReason != nil {
-		disabledReason = binding.GetDisabledReason()
-	}
-	if disabledReason != nil {
-		if disabledReason.ShowErrorInPanel {
-			return errors.New(disabledReason.Text)
-		}
+		if disabledReason := binding.GetDisabledReason(); disabledReason != nil {
+			if disabledReason.AllowFurtherDispatching {
+				return &types.ErrKeybindingNotHandled{DisabledReason: disabledReason}
+			}
 
-		if len(disabledReason.Text) > 0 {
-			gui.c.ErrorToast(gui.Tr.DisabledMenuItemPrefix + disabledReason.Text)
+			if disabledReason.ShowErrorInPanel {
+				return errors.New(disabledReason.Text)
+			}
+
+			if len(disabledReason.Text) > 0 {
+				gui.c.ErrorToast(gui.Tr.DisabledMenuItemPrefix + disabledReason.Text)
+			}
+			return nil
 		}
-		return nil
 	}
+
 	return binding.Handler()
 }
