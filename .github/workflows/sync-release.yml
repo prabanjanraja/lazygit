@@ -1,0 +1,99 @@
+name: Sync Fork and Create Release
+
+on:
+  repository_dispatch:
+    types: [new-release]
+  workflow_dispatch:
+
+jobs:
+  sync_and_release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to push to the repo and create releases
+      pull-requests: read # If you integrate with PRs, otherwise optional
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # v2.8.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # We need to fetch all history and tags for the sync and release process
+          fetch-depth: 0
+          # Ensure we checkout the correct branch if this workflow could be triggered from other branches
+          ref: 'master' # Explicitly checkout master
+
+      - name: Set up Git
+        run: |
+          git config --global user.name "${{ github.actor }}"
+          git config --global user.email "${{ github.actor }}@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/jesseduffield/lazygit.git
+
+      - name: Fetch upstream
+        run: git fetch upstream --tags --force # Use --force to overwrite existing tags if any conflict (e.g. if upstream re-tags)
+
+      - name: Merge upstream/master to local master
+        run: |
+          git checkout master
+          git reset --hard HEAD # Ensure clean state before merge
+          git merge upstream/master -X theirs --no-edit --allow-unrelated-histories
+          # Using -X theirs to prefer upstream changes in case of conflicts.
+          # --allow-unrelated-histories might be needed if the fork history diverged significantly
+          # or was not a clean fork initially.
+
+      - name: Push changes to local master
+        run: git push origin master --tags --force # Use --force for push as well if history might have been rewritten by reset/merge strategy
+        env:
+          # GITHUB_TOKEN is automatically provided by GitHub Actions
+          # It needs write permissions to contents, which should be default for actions in the repo.
+          # If not, you might need to set repository permissions under Settings > Actions > General
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get Upstream Release Details
+        id: upstream_release
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            try {
+              const release = await github.rest.repos.getLatestRelease({
+                owner: 'jesseduffield',
+                repo: 'lazygit'
+              });
+              core.setOutput('tag_name', release.data.tag_name);
+              core.setOutput('name', release.data.name);
+              core.setOutput('body', release.data.body);
+              core.setOutput('prerelease', release.data.prerelease.toString()); // Ensure boolean is string for next step
+              console.log(`Found upstream release: ${release.data.tag_name}`);
+              return release.data;
+            } catch (error) {
+              console.error("Failed to get upstream release:", error);
+              // If no release is found, we shouldn't fail the whole workflow,
+              // but we also shouldn't proceed to create a release.
+              // We can set a flag or output empty values.
+              core.setOutput('tag_name', '');
+              core.setOutput('name', '');
+              core.setOutput('body', 'No upstream release found or error fetching details.');
+              core.setOutput('prerelease', 'false');
+              return {};
+            }
+          result-encoding: json
+
+      - name: Create Release in Fork
+        if: steps.upstream_release.outputs.tag_name != '' # Only run if a tag_name was found
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.upstream_release.outputs.tag_name }}
+          release_name: "Release ${{ steps.upstream_release.outputs.tag_name }} (synced from upstream)"
+          body: |
+            Synced from upstream release: [${{ steps.upstream_release.outputs.name }}](https://github.com/jesseduffield/lazygit/releases/tag/${{ steps.upstream_release.outputs.tag_name }})
+
+            ${{ steps.upstream_release.outputs.body }}
+          draft: false
+          prerelease: ${{ steps.upstream_release.outputs.prerelease == 'true' }}
