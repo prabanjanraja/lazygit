@@ -51,13 +51,13 @@ jobs:
           # GITHUB_TOKEN is automatically provided by GitHub Actions
           # It needs write permissions to contents, which should be default for actions in the repo.
           # If not, you might need to set repository permissions under Settings > Actions > General
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
 
       - name: Get Upstream Release Details
         id: upstream_release
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.PAT_TOKEN }}
           script: |
             try {
               const release = await github.rest.repos.getLatestRelease({
@@ -87,7 +87,7 @@ jobs:
         if: steps.upstream_release.outputs.tag_name != '' # Only run if a tag_name was found
         uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
           tag_name: ${{ steps.upstream_release.outputs.tag_name }}
           release_name: "Release ${{ steps.upstream_release.outputs.tag_name }} (synced from upstream)"
