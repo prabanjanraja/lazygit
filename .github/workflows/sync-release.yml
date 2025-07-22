@@ -34,7 +34,7 @@ jobs:
         run: git remote add upstream https://github.com/jesseduffield/lazygit.git
 
       - name: Fetch upstream
-        run: git fetch upstream --tags --force # Use --force to overwrite existing tags if any conflict (e.g. if upstream re-tags)
+        run: git fetch upstream --tags # --force # Use --force to overwrite existing tags if any conflict (e.g. if upstream re-tags)
 
       - name: Merge upstream/master to local master
         run: |
@@ -46,7 +46,7 @@ jobs:
           # or was not a clean fork initially.
 
       - name: Push changes to local master
-        run: git push origin master --tags --force # Use --force for push as well if history might have been rewritten by reset/merge strategy
+        run: git push origin master --tags # --force # Use --force for push as well if history might have been rewritten by reset/merge strategy
         env:
           # GITHUB_TOKEN is automatically provided by GitHub Actions
           # It needs write permissions to contents, which should be default for actions in the repo.
