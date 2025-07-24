@@ -18,10 +18,10 @@ func NewDiffCommands(gitCommon *GitCommon) *DiffCommands {
 
 // This is for generating diffs to be shown in the UI (e.g. rendering a range
 // diff to the main view). It uses a custom pager if one is configured.
-func (self *DiffCommands) DiffCmdObj(diffArgs []string) oscommands.ICmdObj {
+func (self *DiffCommands) DiffCmdObj(diffArgs []string) *oscommands.CmdObj {
 	extDiffCmd := self.UserConfig().Git.Paging.ExternalDiffCommand
 	useExtDiff := extDiffCmd != ""
-	ignoreWhitespace := self.AppState.IgnoreWhitespaceInDiffView
+	ignoreWhitespace := self.UserConfig().Git.IgnoreWhitespaceInDiffView
 
 	return self.cmd.New(
 		NewGitCmd("diff").
@@ -31,7 +31,7 @@ func (self *DiffCommands) DiffCmdObj(diffArgs []string) oscommands.ICmdObj {
 			Arg("--submodule").
 			Arg(fmt.Sprintf("--color=%s", self.UserConfig().Git.Paging.ColorArg)).
 			ArgIf(ignoreWhitespace, "--ignore-all-space").
-			Arg(fmt.Sprintf("--unified=%d", self.AppState.DiffContextSize)).
+			Arg(fmt.Sprintf("--unified=%d", self.UserConfig().Git.DiffContextSize)).
 			Arg(diffArgs...).
 			Dir(self.repoPaths.worktreePath).
 			ToArgv(),
@@ -83,7 +83,7 @@ type DiffToolCmdOptions struct {
 	Staged bool
 }
 
-func (self *DiffCommands) OpenDiffToolCmdObj(opts DiffToolCmdOptions) oscommands.ICmdObj {
+func (self *DiffCommands) OpenDiffToolCmdObj(opts DiffToolCmdOptions) *oscommands.CmdObj {
 	return self.cmd.New(NewGitCmd("difftool").
 		Arg("--no-prompt").
 		ArgIf(opts.IsDirectory, "--dir-diff").
@@ -95,7 +95,7 @@ func (self *DiffCommands) OpenDiffToolCmdObj(opts DiffToolCmdOptions) oscommands
 		ToArgv())
 }
 
-func (self *DiffCommands) DiffIndexCmdObj(diffArgs ...string) oscommands.ICmdObj {
+func (self *DiffCommands) DiffIndexCmdObj(diffArgs ...string) *oscommands.CmdObj {
 	return self.cmd.New(
 		NewGitCmd("diff-index").
 			Config("diff.noprefix=false").

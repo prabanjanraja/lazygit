@@ -19,6 +19,26 @@ func (config *UserConfig) Validate() error {
 		[]string{"none", "onlyArrow", "arrowAndNumber"}); err != nil {
 		return err
 	}
+	if err := validateEnum("git.autoForwardBranches", config.Git.AutoForwardBranches,
+		[]string{"none", "onlyMainBranches", "allBranches"}); err != nil {
+		return err
+	}
+	if err := validateEnum("git.localBranchSortOrder", config.Git.LocalBranchSortOrder,
+		[]string{"date", "recency", "alphabetical"}); err != nil {
+		return err
+	}
+	if err := validateEnum("git.remoteBranchSortOrder", config.Git.RemoteBranchSortOrder,
+		[]string{"date", "alphabetical"}); err != nil {
+		return err
+	}
+	if err := validateEnum("git.log.order", config.Git.Log.Order,
+		[]string{"date-order", "author-date-order", "topo-order", "default"}); err != nil {
+		return err
+	}
+	if err := validateEnum("git.log.showGraph", config.Git.Log.ShowGraph,
+		[]string{"always", "never", "when-maximised"}); err != nil {
+		return err
+	}
 	if err := validateKeybindings(config.Keybinding); err != nil {
 		return err
 	}
@@ -52,7 +72,7 @@ func validateKeybindingsRecurse(path string, node any) error {
 			}
 		}
 	} else if value.Kind() == reflect.Slice {
-		for i := 0; i < value.Len(); i++ {
+		for i := range value.Len() {
 			if err := validateKeybindingsRecurse(
 				fmt.Sprintf("%s[%d]", path, i), value.Index(i).Interface()); err != nil {
 				return err
@@ -97,21 +117,29 @@ func validateCustomCommands(customCommands []CustomCommand) error {
 			return err
 		}
 
-		if len(customCommand.CommandMenu) > 0 &&
-			(len(customCommand.Context) > 0 ||
+		if len(customCommand.CommandMenu) > 0 {
+			if len(customCommand.Context) > 0 ||
 				len(customCommand.Command) > 0 ||
-				customCommand.Subprocess != nil ||
 				len(customCommand.Prompts) > 0 ||
 				len(customCommand.LoadingText) > 0 ||
-				customCommand.Stream != nil ||
-				customCommand.ShowOutput != nil ||
+				len(customCommand.Output) > 0 ||
 				len(customCommand.OutputTitle) > 0 ||
-				customCommand.After != nil) {
-			commandRef := ""
-			if len(customCommand.Key) > 0 {
-				commandRef = fmt.Sprintf(" with key '%s'", customCommand.Key)
+				customCommand.After != nil {
+				commandRef := ""
+				if len(customCommand.Key) > 0 {
+					commandRef = fmt.Sprintf(" with key '%s'", customCommand.Key)
+				}
+				return fmt.Errorf("Error with custom command%s: it is not allowed to use both commandMenu and any of the other fields except key and description.", commandRef)
 			}
-			return fmt.Errorf("Error with custom command%s: it is not allowed to use both commandMenu and any of the other fields except key and description.", commandRef)
+
+			if err := validateCustomCommands(customCommand.CommandMenu); err != nil {
+				return err
+			}
+		} else {
+			if err := validateEnum("customCommand.output", customCommand.Output,
+				[]string{"", "none", "terminal", "log", "logWithPty", "popup"}); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

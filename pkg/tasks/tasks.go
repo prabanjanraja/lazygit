@@ -70,10 +70,13 @@ type LinesToRead struct {
 	// do an initial refresh. Only set for the initial read request; -1 for
 	// subsequent requests.
 	InitialRefreshAfter int
+
+	// Function to call after reading the lines is done
+	Then func()
 }
 
-func (m *ViewBufferManager) GetTaskKey() string {
-	return m.taskKey
+func (self *ViewBufferManager) GetTaskKey() string {
+	return self.taskKey
 }
 
 func NewViewBufferManager(
@@ -91,16 +94,28 @@ func NewViewBufferManager(
 		beforeStart:  beforeStart,
 		refreshView:  refreshView,
 		onEndOfInput: onEndOfInput,
-		readLines:    make(chan LinesToRead, 1024),
+		readLines:    nil,
 		onNewKey:     onNewKey,
 		newGocuiTask: newGocuiTask,
 	}
 }
 
 func (self *ViewBufferManager) ReadLines(n int) {
-	go utils.Safe(func() {
-		self.readLines <- LinesToRead{Total: n, InitialRefreshAfter: -1}
-	})
+	if self.readLines != nil {
+		go utils.Safe(func() {
+			self.readLines <- LinesToRead{Total: n, InitialRefreshAfter: -1}
+		})
+	}
+}
+
+func (self *ViewBufferManager) ReadToEnd(then func()) {
+	if self.readLines != nil {
+		go utils.Safe(func() {
+			self.readLines <- LinesToRead{Total: -1, InitialRefreshAfter: -1, Then: then}
+		})
+	} else if then != nil {
+		then()
+	}
 }
 
 func (self *ViewBufferManager) NewCmdTask(start func() (*exec.Cmd, io.Reader), prefix string, linesToRead LinesToRead, onDoneFn func()) func(TaskOpts) error {
@@ -166,7 +181,6 @@ func (self *ViewBufferManager) NewCmdTask(start func() (*exec.Cmd, io.Reader), p
 
 		loadingMutex := deadlock.Mutex{}
 
-		// not sure if it's the right move to redefine this or not
 		self.readLines = make(chan LinesToRead, 1024)
 
 		scanner := bufio.NewScanner(r)
@@ -233,14 +247,20 @@ func (self *ViewBufferManager) NewCmdTask(start func() (*exec.Cmd, io.Reader), p
 				case <-opts.Stop:
 					break outer
 				case linesToRead := <-self.readLines:
-					for i := 0; i < linesToRead.Total; i++ {
+					callThen := func() {
+						if linesToRead.Then != nil {
+							linesToRead.Then()
+						}
+					}
+					for i := 0; linesToRead.Total == -1 || i < linesToRead.Total; i++ {
 						var ok bool
 						var line []byte
 						select {
 						case <-opts.Stop:
+							callThen()
 							break outer
 						case line, ok = <-lineChan:
-							break
+							// process line below
 						}
 
 						loadingMutex.Lock()
@@ -257,6 +277,7 @@ func (self *ViewBufferManager) NewCmdTask(start func() (*exec.Cmd, io.Reader), p
 							// if we're here then there's nothing left to scan from the source
 							// so we're at the EOF and can flush the stale content
 							self.onEndOfInput()
+							callThen()
 							break outer
 						}
 						writeToView(append(line, '\n'))
@@ -271,8 +292,11 @@ func (self *ViewBufferManager) NewCmdTask(start func() (*exec.Cmd, io.Reader), p
 					}
 					refreshViewIfStale()
 					onFirstPageShown()
+					callThen()
 				}
 			}
+
+			self.readLines = nil
 
 			refreshViewIfStale()
 
@@ -373,6 +397,8 @@ func (self *ViewBufferManager) NewTask(f func(TaskOpts) error, key string) error
 		if self.stopCurrentTask != nil {
 			self.stopCurrentTask()
 		}
+
+		self.readLines = nil
 
 		stop := make(chan struct{})
 		notifyStopped := make(chan struct{})

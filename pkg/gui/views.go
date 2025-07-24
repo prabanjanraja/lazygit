@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/jesseduffield/gocui"
@@ -78,7 +79,7 @@ func (gui *Gui) createAllViews() error {
 	var err error
 	for _, mapping := range gui.orderedViewNameMappings() {
 		*mapping.viewPtr, err = gui.prepareView(mapping.name)
-		if err != nil && !gocui.IsUnknownView(err) {
+		if err != nil && !errors.Is(err, gocui.ErrUnknownView) {
 			return err
 		}
 	}
@@ -134,6 +135,7 @@ func (gui *Gui) createAllViews() error {
 	gui.Views.Menu.Visible = false
 
 	gui.Views.Tooltip.Visible = false
+	gui.Views.Tooltip.AutoRenderHyperLinks = true
 
 	gui.Views.Information.BgColor = gocui.ColorDefault
 	gui.Views.Information.FgColor = gocui.ColorGreen
@@ -157,6 +159,8 @@ func (gui *Gui) configureViewProperties() {
 		frameRunes = []rune{'─', '│', '╭', '╮', '╰', '╯'}
 	case "hidden":
 		frameRunes = []rune{' ', ' ', ' ', ' ', ' ', ' '}
+	case "bold":
+		frameRunes = []rune{'━', '┃', '┏', '┓', '┗', '┛'}
 	}
 
 	for _, mapping := range gui.orderedViewNameMappings() {

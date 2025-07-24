@@ -25,19 +25,14 @@ func (self *QuitActions) quitAux() error {
 		return self.confirmQuitDuringUpdate()
 	}
 
-	if self.c.UserConfig().ConfirmOnQuit {
-		self.c.Confirm(types.ConfirmOpts{
+	return self.c.ConfirmIf(self.c.UserConfig().ConfirmOnQuit,
+		types.ConfirmOpts{
 			Title:  "",
 			Prompt: self.c.Tr.ConfirmQuit,
 			HandleConfirm: func() error {
 				return gocui.ErrQuit
 			},
 		})
-
-		return nil
-	}
-
-	return gocui.ErrQuit
 }
 
 func (self *QuitActions) confirmQuitDuringUpdate() error {
@@ -79,7 +74,7 @@ func (self *QuitActions) Escape() error {
 	parentContext := currentContext.GetParentContext()
 	if parentContext != nil {
 		// TODO: think about whether this should be marked as a return rather than adding to the stack
-		self.c.Context().Push(parentContext)
+		self.c.Context().Push(parentContext, types.OnFocusOpts{})
 		return nil
 	}
 

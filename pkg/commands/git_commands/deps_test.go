@@ -9,7 +9,6 @@ import (
 	"github.com/jesseduffield/lazygit/pkg/commands/oscommands"
 	"github.com/jesseduffield/lazygit/pkg/common"
 	"github.com/jesseduffield/lazygit/pkg/config"
-	"github.com/jesseduffield/lazygit/pkg/utils"
 	"github.com/spf13/afero"
 )
 
@@ -32,7 +31,7 @@ func buildGitCommon(deps commonDeps) *GitCommon {
 
 	gitCommon.Common = deps.common
 	if gitCommon.Common == nil {
-		gitCommon.Common = utils.NewDummyCommonWithUserConfigAndAppState(deps.userConfig, deps.appState)
+		gitCommon.Common = common.NewDummyCommonWithUserConfigAndAppState(deps.userConfig, deps.appState)
 	}
 
 	if deps.fs != nil {
@@ -98,7 +97,7 @@ func buildGitCommon(deps commonDeps) *GitCommon {
 
 func buildRepo() *gogit.Repository {
 	// TODO: think of a way to actually mock this out
-	var repo *gogit.Repository = nil
+	var repo *gogit.Repository
 	return repo
 }
 

@@ -4,14 +4,9 @@ import (
 	"errors"
 
 	"github.com/jesseduffield/lazygit/pkg/commands/patch"
-	"github.com/jesseduffield/lazygit/pkg/commands/types/enums"
 	"github.com/jesseduffield/lazygit/pkg/gui/patch_exploring"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
 )
-
-type IPatchBuildingHelper interface {
-	ValidateNormalWorkingTreeState() (bool, error)
-}
 
 type PatchBuildingHelper struct {
 	c *HelperCommon
@@ -26,7 +21,7 @@ func NewPatchBuildingHelper(
 }
 
 func (self *PatchBuildingHelper) ValidateNormalWorkingTreeState() (bool, error) {
-	if self.c.Git().Status.WorkingTreeState() != enums.REBASE_MODE_NONE {
+	if self.c.Git().Status.WorkingTreeState().Any() {
 		return false, errors.New(self.c.Tr.CantPatchWhileRebasingError)
 	}
 	return true, nil
@@ -45,11 +40,9 @@ func (self *PatchBuildingHelper) Reset() error {
 		self.Escape()
 	}
 
-	if err := self.c.Refresh(types.RefreshOptions{
+	self.c.Refresh(types.RefreshOptions{
 		Scope: []types.RefreshableView{types.COMMIT_FILES},
-	}); err != nil {
-		return err
-	}
+	})
 
 	// refreshing the current context so that the secondary panel is hidden if necessary.
 	self.c.PostRefreshUpdate(self.c.Context().Current())
@@ -91,7 +84,7 @@ func (self *PatchBuildingHelper) RefreshPatchBuildingPanel(opts types.OnFocusOpt
 
 	oldState := context.GetState()
 
-	state := patch_exploring.NewState(diff, selectedLineIdx, context.GetView(), oldState)
+	state := patch_exploring.NewState(diff, selectedLineIdx, context.GetView(), oldState, self.c.UserConfig().Gui.UseHunkModeInStagingView)
 	context.SetState(state)
 	if state == nil {
 		self.Escape()

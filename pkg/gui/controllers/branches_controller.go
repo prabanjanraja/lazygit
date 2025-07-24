@@ -58,6 +58,13 @@ func (self *BranchesController) GetKeybindings(opts types.KeybindingsOpts) []*ty
 			DisplayOnScreen:   true,
 		},
 		{
+			Key:               opts.GetKey(opts.Config.Branches.MoveCommitsToNewBranch),
+			Handler:           self.c.Helpers().Refs.MoveCommitsToNewBranch,
+			GetDisabledReason: self.c.Helpers().Refs.CanMoveCommitsToNewBranch,
+			Description:       self.c.Tr.MoveCommitsToNewBranch,
+			Tooltip:           self.c.Tr.MoveCommitsToNewBranchTooltip,
+		},
+		{
 			Key:               opts.GetKey(opts.Config.Branches.CreatePullRequest),
 			Handler:           self.withItem(self.handleCreatePullRequest),
 			GetDisabledReason: self.require(self.singleItemSelected()),
@@ -81,6 +88,11 @@ func (self *BranchesController) GetKeybindings(opts types.KeybindingsOpts) []*ty
 			Handler:     self.checkoutByName,
 			Description: self.c.Tr.CheckoutByName,
 			Tooltip:     self.c.Tr.CheckoutByNameTooltip,
+		},
+		{
+			Key:         opts.GetKey(opts.Config.Branches.CheckoutPreviousBranch),
+			Handler:     self.checkoutPreviousBranch,
+			Description: self.c.Tr.CheckoutPreviousBranch,
 		},
 		{
 			Key:               opts.GetKey(opts.Config.Branches.ForceCheckoutBranch),
@@ -133,6 +145,7 @@ func (self *BranchesController) GetKeybindings(opts types.KeybindingsOpts) []*ty
 			Key:         opts.GetKey(opts.Config.Branches.SortOrder),
 			Handler:     self.createSortMenu,
 			Description: self.c.Tr.SortOrder,
+			OpensMenu:   true,
 		},
 		{
 			Key:               opts.GetKey(opts.Config.Commits.ViewResetOptions),
@@ -256,15 +269,13 @@ func (self *BranchesController) viewUpstreamOptions(selectedBranch *models.Branc
 			if err := self.c.Git().Branch.UnsetUpstream(selectedBranch.Name); err != nil {
 				return err
 			}
-			if err := self.c.Refresh(types.RefreshOptions{
+			self.c.Refresh(types.RefreshOptions{
 				Mode: types.SYNC,
 				Scope: []types.RefreshableView{
 					types.BRANCHES,
 					types.COMMITS,
 				},
-			}); err != nil {
-				return err
-			}
+			})
 			return nil
 		},
 		Key: 'u',
@@ -282,15 +293,13 @@ func (self *BranchesController) viewUpstreamOptions(selectedBranch *models.Branc
 				if err := self.c.Git().Branch.SetUpstream(upstreamRemote, upstreamBranch, selectedBranch.Name); err != nil {
 					return err
 				}
-				if err := self.c.Refresh(types.RefreshOptions{
+				self.c.Refresh(types.RefreshOptions{
 					Mode: types.SYNC,
 					Scope: []types.RefreshableView{
 						types.BRANCHES,
 						types.COMMITS,
 					},
-				}); err != nil {
-					return err
-				}
+				})
 				return nil
 			})
 		},
@@ -319,7 +328,8 @@ func (self *BranchesController) viewUpstreamOptions(selectedBranch *models.Branc
 		LabelColumns: []string{upstreamResetOptions},
 		OpensMenu:    true,
 		OnPress: func() error {
-			err := self.c.Helpers().Refs.CreateGitResetMenu(upstream)
+			// We only can invoke this when the remote branch is stored locally, so using the selectedBranch here is fine.
+			err := self.c.Helpers().Refs.CreateGitResetMenu(upstream, selectedBranch.FullUpstreamRefName())
 			if err != nil {
 				return err
 			}
@@ -470,11 +480,17 @@ func (self *BranchesController) forceCheckout() error {
 			if err := self.c.Git().Branch.Checkout(branch.Name, git_commands.CheckoutOptions{Force: true}); err != nil {
 				return err
 			}
-			return self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
+			self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
+			return nil
 		},
 	})
 
 	return nil
+}
+
+func (self *BranchesController) checkoutPreviousBranch() error {
+	self.c.LogAction(self.c.Tr.Actions.CheckoutBranch)
+	return self.c.Helpers().Refs.CheckoutRef("-", types.CheckoutRefOptions{})
 }
 
 func (self *BranchesController) checkoutByName() error {
@@ -518,7 +534,8 @@ func (self *BranchesController) createNewBranchWithName(newBranchName string) er
 	}
 
 	self.context().SetSelection(0)
-	return self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, KeepBranchSelectionIndex: true})
+	self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, KeepBranchSelectionIndex: true})
+	return nil
 }
 
 func (self *BranchesController) localDelete(branches []*models.Branch) error {
@@ -529,7 +546,7 @@ func (self *BranchesController) remoteDelete(branches []*models.Branch) error {
 	remoteBranches := lo.Map(branches, func(branch *models.Branch, _ int) *models.RemoteBranch {
 		return &models.RemoteBranch{Name: branch.UpstreamBranch, RemoteName: branch.UpstreamRemote}
 	})
-	return self.c.Helpers().BranchesHelper.ConfirmDeleteRemote(remoteBranches)
+	return self.c.Helpers().BranchesHelper.ConfirmDeleteRemote(remoteBranches, false)
 }
 
 func (self *BranchesController) localAndRemoteDelete(branches []*models.Branch) error {
@@ -647,17 +664,17 @@ func (self *BranchesController) fastForward(branch *models.Branch) error {
 					WorktreePath:    worktreePath,
 				},
 			)
-			_ = self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
-			return err
-		} else {
-			self.c.LogAction(action)
-
-			err := self.c.Git().Sync.FastForward(
-				task, branch.Name, branch.UpstreamRemote, branch.UpstreamBranch,
-			)
-			_ = self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.BRANCHES}})
+			self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC})
 			return err
 		}
+
+		self.c.LogAction(action)
+
+		err := self.c.Git().Sync.FastForward(
+			task, branch.Name, branch.UpstreamRemote, branch.UpstreamBranch,
+		)
+		self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.BRANCHES}})
+		return err
 	})
 }
 
@@ -666,20 +683,23 @@ func (self *BranchesController) createTag(branch *models.Branch) error {
 }
 
 func (self *BranchesController) createSortMenu() error {
-	return self.c.Helpers().Refs.CreateSortOrderMenu([]string{"recency", "alphabetical", "date"}, func(sortOrder string) error {
-		if self.c.GetAppState().LocalBranchSortOrder != sortOrder {
-			self.c.GetAppState().LocalBranchSortOrder = sortOrder
-			self.c.SaveAppStateAndLogError()
-			self.c.Contexts().Branches.SetSelection(0)
-			return self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.BRANCHES}})
-		}
-		return nil
-	},
-		self.c.GetAppState().LocalBranchSortOrder)
+	return self.c.Helpers().Refs.CreateSortOrderMenu(
+		[]string{"recency", "alphabetical", "date"},
+		self.c.Tr.SortOrderPromptLocalBranches,
+		func(sortOrder string) error {
+			if self.c.UserConfig().Git.LocalBranchSortOrder != sortOrder {
+				self.c.UserConfig().Git.LocalBranchSortOrder = sortOrder
+				self.c.Contexts().Branches.SetSelection(0)
+				self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.BRANCHES}})
+				return nil
+			}
+			return nil
+		},
+		self.c.UserConfig().Git.LocalBranchSortOrder)
 }
 
 func (self *BranchesController) createResetMenu(selectedBranch *models.Branch) error {
-	return self.c.Helpers().Refs.CreateGitResetMenu(selectedBranch.Name)
+	return self.c.Helpers().Refs.CreateGitResetMenu(selectedBranch.Name, selectedBranch.FullRefName())
 }
 
 func (self *BranchesController) rename(branch *models.Branch) error {
@@ -694,7 +714,7 @@ func (self *BranchesController) rename(branch *models.Branch) error {
 				}
 
 				// need to find where the branch is now so that we can re-select it. That means we need to refetch the branches synchronously and then find our branch
-				_ = self.c.Refresh(types.RefreshOptions{
+				self.c.Refresh(types.RefreshOptions{
 					Mode:  types.SYNC,
 					Scope: []types.RefreshableView{types.BRANCHES, types.WORKTREES},
 				})
@@ -717,17 +737,11 @@ func (self *BranchesController) rename(branch *models.Branch) error {
 	// I could do an explicit check here for whether the branch is tracking a remote branch
 	// but if we've selected it we'll already know that via Pullables and Pullables.
 	// Bit of a hack but I'm lazy.
-	if !branch.IsTrackingRemote() {
-		return promptForNewName()
-	}
-
-	self.c.Confirm(types.ConfirmOpts{
+	return self.c.ConfirmIf(branch.IsTrackingRemote(), types.ConfirmOpts{
 		Title:         self.c.Tr.RenameBranch,
 		Prompt:        self.c.Tr.RenameBranchWarning,
 		HandleConfirm: promptForNewName,
 	})
-
-	return nil
 }
 
 func (self *BranchesController) newBranch(selectedBranch *models.Branch) error {

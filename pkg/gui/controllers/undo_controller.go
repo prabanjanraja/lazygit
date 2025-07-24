@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/jesseduffield/gocui"
-	"github.com/jesseduffield/lazygit/pkg/commands/types/enums"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
 	"github.com/jesseduffield/lazygit/pkg/utils"
 )
@@ -78,7 +77,7 @@ func (self *UndoController) reflogUndo() error {
 	undoEnvVars := []string{"GIT_REFLOG_ACTION=[lazygit undo]"}
 	undoingStatus := self.c.Tr.UndoingStatus
 
-	if self.c.Git().Status.WorkingTreeState() == enums.REBASE_MODE_REBASING {
+	if self.c.Git().Status.WorkingTreeState().Any() {
 		return errors.New(self.c.Tr.CantUndoWhileRebasing)
 	}
 
@@ -91,7 +90,7 @@ func (self *UndoController) reflogUndo() error {
 		case COMMIT:
 			self.c.Confirm(types.ConfirmOpts{
 				Title:  self.c.Tr.Actions.Undo,
-				Prompt: fmt.Sprintf(self.c.Tr.SoftResetPrompt, action.from),
+				Prompt: fmt.Sprintf(self.c.Tr.SoftResetPrompt, utils.ShortHash(action.from)),
 				HandleConfirm: func() error {
 					self.c.LogAction(self.c.Tr.Actions.Undo)
 					return self.c.WithWaitingStatus(undoingStatus, func(gocui.Task) error {
@@ -104,7 +103,7 @@ func (self *UndoController) reflogUndo() error {
 		case REBASE:
 			self.c.Confirm(types.ConfirmOpts{
 				Title:  self.c.Tr.Actions.Undo,
-				Prompt: fmt.Sprintf(self.c.Tr.HardResetAutostashPrompt, action.from),
+				Prompt: fmt.Sprintf(self.c.Tr.HardResetAutostashPrompt, utils.ShortHash(action.from)),
 				HandleConfirm: func() error {
 					self.c.LogAction(self.c.Tr.Actions.Undo)
 					return self.hardResetWithAutoStash(action.from, hardResetOptions{
@@ -142,7 +141,7 @@ func (self *UndoController) reflogRedo() error {
 	redoEnvVars := []string{"GIT_REFLOG_ACTION=[lazygit redo]"}
 	redoingStatus := self.c.Tr.RedoingStatus
 
-	if self.c.Git().Status.WorkingTreeState() == enums.REBASE_MODE_REBASING {
+	if self.c.Git().Status.WorkingTreeState().Any() {
 		return errors.New(self.c.Tr.CantRedoWhileRebasing)
 	}
 
@@ -158,7 +157,7 @@ func (self *UndoController) reflogRedo() error {
 		case COMMIT, REBASE:
 			self.c.Confirm(types.ConfirmOpts{
 				Title:  self.c.Tr.Actions.Redo,
-				Prompt: fmt.Sprintf(self.c.Tr.HardResetAutostashPrompt, action.to),
+				Prompt: fmt.Sprintf(self.c.Tr.HardResetAutostashPrompt, utils.ShortHash(action.to)),
 				HandleConfirm: func() error {
 					self.c.LogAction(self.c.Tr.Actions.Redo)
 					return self.hardResetWithAutoStash(action.to, hardResetOptions{
@@ -208,7 +207,7 @@ func (self *UndoController) parseReflogForActions(onUserAction func(counter int,
 
 		prevCommitHash := ""
 		if len(reflogCommits)-1 >= reflogCommitIdx+1 {
-			prevCommitHash = reflogCommits[reflogCommitIdx+1].Hash
+			prevCommitHash = reflogCommits[reflogCommitIdx+1].Hash()
 		}
 
 		if rebaseFinishCommitHash == "" {
@@ -217,11 +216,11 @@ func (self *UndoController) parseReflogForActions(onUserAction func(counter int,
 			} else if ok, _ := utils.FindStringSubmatch(reflogCommit.Name, `^\[lazygit redo\]`); ok {
 				counter--
 			} else if ok, _ := utils.FindStringSubmatch(reflogCommit.Name, `^rebase (-i )?\(abort\)|^rebase (-i )?\(finish\)`); ok {
-				rebaseFinishCommitHash = reflogCommit.Hash
+				rebaseFinishCommitHash = reflogCommit.Hash()
 			} else if ok, match := utils.FindStringSubmatch(reflogCommit.Name, `^checkout: moving from ([\S]+) to ([\S]+)`); ok {
 				action = &reflogAction{kind: CHECKOUT, from: match[1], to: match[2]}
 			} else if ok, _ := utils.FindStringSubmatch(reflogCommit.Name, `^commit|^reset: moving to|^pull`); ok {
-				action = &reflogAction{kind: COMMIT, from: prevCommitHash, to: reflogCommit.Hash}
+				action = &reflogAction{kind: COMMIT, from: prevCommitHash, to: reflogCommit.Hash()}
 			} else if ok, _ := utils.FindStringSubmatch(reflogCommit.Name, `^rebase (-i )?\(start\)`); ok {
 				// if we're here then we must be currently inside an interactive rebase
 				action = &reflogAction{kind: CURRENT_REBASE, from: prevCommitHash}
@@ -261,7 +260,7 @@ func (self *UndoController) hardResetWithAutoStash(commitHash string, options ha
 	dirtyWorkingTree := self.c.Helpers().WorkingTree.IsWorkingTreeDirty()
 	if dirtyWorkingTree {
 		return self.c.WithWaitingStatus(options.WaitingStatus, func(gocui.Task) error {
-			if err := self.c.Git().Stash.Push(self.c.Tr.StashPrefix + commitHash); err != nil {
+			if err := self.c.Git().Stash.Push(fmt.Sprintf(self.c.Tr.AutoStashForUndo, utils.ShortHash(commitHash))); err != nil {
 				return err
 			}
 			if err := reset(); err != nil {
@@ -272,7 +271,8 @@ func (self *UndoController) hardResetWithAutoStash(commitHash string, options ha
 			if err != nil {
 				return err
 			}
-			return self.c.Refresh(types.RefreshOptions{})
+			self.c.Refresh(types.RefreshOptions{})
+			return nil
 		})
 	}
 

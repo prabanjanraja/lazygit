@@ -41,7 +41,7 @@ func TestFileGetStatusFiles(t *testing.T) {
 			showNumstatInFilesView: true,
 			expectedFiles: []*models.File{
 				{
-					Name:                    "file1.txt",
+					Path:                    "file1.txt",
 					HasStagedChanges:        true,
 					HasUnstagedChanges:      true,
 					Tracked:                 true,
@@ -55,7 +55,7 @@ func TestFileGetStatusFiles(t *testing.T) {
 					LinesDeleted:            1,
 				},
 				{
-					Name:                    "file3.txt",
+					Path:                    "file3.txt",
 					HasStagedChanges:        true,
 					HasUnstagedChanges:      false,
 					Tracked:                 false,
@@ -69,7 +69,7 @@ func TestFileGetStatusFiles(t *testing.T) {
 					LinesDeleted:            2,
 				},
 				{
-					Name:                    "file2.txt",
+					Path:                    "file2.txt",
 					HasStagedChanges:        true,
 					HasUnstagedChanges:      true,
 					Tracked:                 false,
@@ -83,7 +83,7 @@ func TestFileGetStatusFiles(t *testing.T) {
 					LinesDeleted:            0,
 				},
 				{
-					Name:                    "file4.txt",
+					Path:                    "file4.txt",
 					HasStagedChanges:        false,
 					HasUnstagedChanges:      true,
 					Tracked:                 false,
@@ -97,7 +97,7 @@ func TestFileGetStatusFiles(t *testing.T) {
 					LinesDeleted:            2,
 				},
 				{
-					Name:                    "file5.txt",
+					Path:                    "file5.txt",
 					HasStagedChanges:        false,
 					HasUnstagedChanges:      true,
 					Tracked:                 true,
@@ -119,7 +119,7 @@ func TestFileGetStatusFiles(t *testing.T) {
 				ExpectGitArgs([]string{"status", "--untracked-files=yes", "--porcelain", "-z", "--find-renames=50%"}, "MM a\nb.txt", nil),
 			expectedFiles: []*models.File{
 				{
-					Name:                    "a\nb.txt",
+					Path:                    "a\nb.txt",
 					HasStagedChanges:        true,
 					HasUnstagedChanges:      true,
 					Tracked:                 true,
@@ -142,8 +142,8 @@ func TestFileGetStatusFiles(t *testing.T) {
 				),
 			expectedFiles: []*models.File{
 				{
-					Name:                    "after1.txt",
-					PreviousName:            "before1.txt",
+					Path:                    "after1.txt",
+					PreviousPath:            "before1.txt",
 					HasStagedChanges:        true,
 					HasUnstagedChanges:      false,
 					Tracked:                 true,
@@ -155,8 +155,8 @@ func TestFileGetStatusFiles(t *testing.T) {
 					ShortStatus:             "R ",
 				},
 				{
-					Name:                    "after2.txt",
-					PreviousName:            "before2.txt",
+					Path:                    "after2.txt",
+					PreviousPath:            "before2.txt",
 					HasStagedChanges:        true,
 					HasUnstagedChanges:      true,
 					Tracked:                 true,
@@ -179,7 +179,7 @@ func TestFileGetStatusFiles(t *testing.T) {
 				),
 			expectedFiles: []*models.File{
 				{
-					Name:                    "a -> b.txt",
+					Path:                    "a -> b.txt",
 					HasStagedChanges:        false,
 					HasUnstagedChanges:      true,
 					Tracked:                 false,
@@ -198,17 +198,12 @@ func TestFileGetStatusFiles(t *testing.T) {
 		t.Run(s.testName, func(t *testing.T) {
 			cmd := oscommands.NewDummyCmdObjBuilder(s.runner)
 
-			appState := &config.AppState{}
-			appState.RenameSimilarityThreshold = s.similarityThreshold
-
-			userConfig := &config.UserConfig{
-				Gui: config.GuiConfig{
-					ShowNumstatInFilesView: s.showNumstatInFilesView,
-				},
-			}
+			userConfig := &config.UserConfig{}
+			userConfig.Gui.ShowNumstatInFilesView = s.showNumstatInFilesView
+			userConfig.Git.RenameSimilarityThreshold = s.similarityThreshold
 
 			loader := &FileLoader{
-				GitCommon:   buildGitCommon(commonDeps{appState: appState, userConfig: userConfig}),
+				GitCommon:   buildGitCommon(commonDeps{appState: &config.AppState{}, userConfig: userConfig}),
 				cmd:         cmd,
 				config:      &FakeFileLoaderConfig{showUntrackedFiles: "yes"},
 				getFileType: func(string) string { return "file" },

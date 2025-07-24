@@ -7,9 +7,11 @@ import (
 
 	"github.com/jesseduffield/lazygit/pkg/commands/git_commands"
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
+	"github.com/jesseduffield/lazygit/pkg/gui/context/traits"
 	"github.com/jesseduffield/lazygit/pkg/gui/keybindings"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
 	"github.com/jesseduffield/lazygit/pkg/utils"
+	"github.com/samber/lo"
 )
 
 // This controller is for all contexts that contain a list of commits.
@@ -23,6 +25,8 @@ type ContainsCommits interface {
 	GetSelectedItems() ([]*models.Commit, int, int)
 	GetCommits() []*models.Commit
 	GetSelectedLineIdx() int
+	GetSelectionRangeAndMode() (int, int, traits.RangeSelectMode)
+	SetSelectionRangeAndMode(int, int, traits.RangeSelectMode)
 }
 
 type BasicCommitsController struct {
@@ -77,6 +81,17 @@ func (self *BasicCommitsController) GetKeybindings(opts types.KeybindingsOpts) [
 			Description:       self.c.Tr.CreateNewBranchFromCommit,
 		},
 		{
+			// Putting this in BasicCommitsController even though we really only want it in the commits
+			// panel. But I find it important that this ends up next to "New Branch", and I couldn't
+			// find another way to achieve this. It's not such a big deal to have it in subcommits and
+			// reflog too, I'd say.
+			Key:               opts.GetKey(opts.Config.Branches.MoveCommitsToNewBranch),
+			Handler:           self.c.Helpers().Refs.MoveCommitsToNewBranch,
+			GetDisabledReason: self.c.Helpers().Refs.CanMoveCommitsToNewBranch,
+			Description:       self.c.Tr.MoveCommitsToNewBranch,
+			Tooltip:           self.c.Tr.MoveCommitsToNewBranchTooltip,
+		},
+		{
 			Key:               opts.GetKey(opts.Config.Commits.ViewResetOptions),
 			Handler:           self.withItem(self.createResetMenu),
 			GetDisabledReason: self.require(self.singleItemSelected()),
@@ -109,6 +124,12 @@ func (self *BasicCommitsController) GetKeybindings(opts types.KeybindingsOpts) [
 			GetDisabledReason: self.require(self.singleItemSelected()),
 			Description:       self.c.Tr.OpenDiffTool,
 		},
+		{
+			Key:               opts.GetKey(opts.Config.Commits.SelectCommitsOfCurrentBranch),
+			Handler:           self.selectCommitsOfCurrentBranch,
+			GetDisabledReason: self.require(self.canSelectCommitsOfCurrentBranch),
+			Description:       self.c.Tr.SelectCommitsOfCurrentBranch,
+		},
 		// Putting this at the bottom of the list so that it has the lowest priority,
 		// meaning that if the user has configured another keybinding to the same key
 		// then that will take precedence.
@@ -132,7 +153,7 @@ func (self *BasicCommitsController) getCommitMessageBody(hash string) string {
 }
 
 func (self *BasicCommitsController) copyCommitAttribute(commit *models.Commit) error {
-	commitMessageBody := self.getCommitMessageBody(commit.Hash)
+	commitMessageBody := self.getCommitMessageBody(commit.Hash())
 	var commitMessageBodyDisabled *types.DisabledReason
 	if commitMessageBody == "" {
 		commitMessageBodyDisabled = &types.DisabledReason{
@@ -214,16 +235,16 @@ func (self *BasicCommitsController) copyCommitAttribute(commit *models.Commit) e
 
 func (self *BasicCommitsController) copyCommitHashToClipboard(commit *models.Commit) error {
 	self.c.LogAction(self.c.Tr.Actions.CopyCommitHashToClipboard)
-	if err := self.c.OS().CopyToClipboard(commit.Hash); err != nil {
+	if err := self.c.OS().CopyToClipboard(commit.Hash()); err != nil {
 		return err
 	}
 
-	self.c.Toast(fmt.Sprintf("'%s' %s", commit.Hash, self.c.Tr.CopiedToClipboard))
+	self.c.Toast(fmt.Sprintf("'%s' %s", commit.Hash(), self.c.Tr.CopiedToClipboard))
 	return nil
 }
 
 func (self *BasicCommitsController) copyCommitURLToClipboard(commit *models.Commit) error {
-	url, err := self.c.Helpers().Host.GetCommitURL(commit.Hash)
+	url, err := self.c.Helpers().Host.GetCommitURL(commit.Hash())
 	if err != nil {
 		return err
 	}
@@ -238,7 +259,7 @@ func (self *BasicCommitsController) copyCommitURLToClipboard(commit *models.Comm
 }
 
 func (self *BasicCommitsController) copyCommitDiffToClipboard(commit *models.Commit) error {
-	diff, err := self.c.Git().Commit.GetCommitDiff(commit.Hash)
+	diff, err := self.c.Git().Commit.GetCommitDiff(commit.Hash())
 	if err != nil {
 		return err
 	}
@@ -253,7 +274,7 @@ func (self *BasicCommitsController) copyCommitDiffToClipboard(commit *models.Com
 }
 
 func (self *BasicCommitsController) copyAuthorToClipboard(commit *models.Commit) error {
-	author, err := self.c.Git().Commit.GetCommitAuthor(commit.Hash)
+	author, err := self.c.Git().Commit.GetCommitAuthor(commit.Hash())
 	if err != nil {
 		return err
 	}
@@ -270,7 +291,7 @@ func (self *BasicCommitsController) copyAuthorToClipboard(commit *models.Commit)
 }
 
 func (self *BasicCommitsController) copyCommitMessageToClipboard(commit *models.Commit) error {
-	message, err := self.c.Git().Commit.GetCommitMessage(commit.Hash)
+	message, err := self.c.Git().Commit.GetCommitMessage(commit.Hash())
 	if err != nil {
 		return err
 	}
@@ -295,7 +316,7 @@ func (self *BasicCommitsController) copyCommitMessageBodyToClipboard(commitMessa
 }
 
 func (self *BasicCommitsController) copyCommitSubjectToClipboard(commit *models.Commit) error {
-	message, err := self.c.Git().Commit.GetCommitSubject(commit.Hash)
+	message, err := self.c.Git().Commit.GetCommitSubject(commit.Hash())
 	if err != nil {
 		return err
 	}
@@ -322,7 +343,7 @@ func (self *BasicCommitsController) copyCommitTagsToClipboard(commit *models.Com
 }
 
 func (self *BasicCommitsController) openInBrowser(commit *models.Commit) error {
-	url, err := self.c.Helpers().Host.GetCommitURL(commit.Hash)
+	url, err := self.c.Helpers().Host.GetCommitURL(commit.Hash())
 	if err != nil {
 		return err
 	}
@@ -340,7 +361,7 @@ func (self *BasicCommitsController) newBranch(commit *models.Commit) error {
 }
 
 func (self *BasicCommitsController) createResetMenu(commit *models.Commit) error {
-	return self.c.Helpers().Refs.CreateGitResetMenu(commit.Hash)
+	return self.c.Helpers().Refs.CreateGitResetMenu(commit.Hash(), commit.Hash())
 }
 
 func (self *BasicCommitsController) checkout(commit *models.Commit) error {
@@ -353,12 +374,8 @@ func (self *BasicCommitsController) copyRange(*models.Commit) error {
 
 func (self *BasicCommitsController) canCopyCommits(selectedCommits []*models.Commit, startIdx int, endIdx int) *types.DisabledReason {
 	for _, commit := range selectedCommits {
-		if commit.Hash == "" {
+		if commit.Hash() == "" {
 			return &types.DisabledReason{Text: self.c.Tr.CannotCherryPickNonCommit, ShowErrorInPanel: true}
-		}
-
-		if commit.IsMerge() {
-			return &types.DisabledReason{Text: self.c.Tr.CannotCherryPickMergeCommit, ShowErrorInPanel: true}
 		}
 	}
 
@@ -388,4 +405,42 @@ func (self *BasicCommitsController) openDiffTool(commit *models.Commit) error {
 			Staged:      false,
 		}))
 	return err
+}
+
+func (self *BasicCommitsController) canSelectCommitsOfCurrentBranch() *types.DisabledReason {
+	if index := self.findFirstCommitAfterCurrentBranch(); index <= 0 {
+		return &types.DisabledReason{Text: self.c.Tr.NoCommitsThisBranch}
+	}
+
+	return nil
+}
+
+func (self *BasicCommitsController) findFirstCommitAfterCurrentBranch() int {
+	_, index, ok := lo.FindIndexOf(self.context.GetCommits(), func(c *models.Commit) bool {
+		return c.IsMerge() || c.Status == models.StatusMerged
+	})
+
+	if !ok {
+		return 0
+	}
+
+	return index
+}
+
+func (self *BasicCommitsController) selectCommitsOfCurrentBranch() error {
+	index := self.findFirstCommitAfterCurrentBranch()
+	if index <= 0 {
+		return nil
+	}
+
+	_, _, mode := self.context.GetSelectionRangeAndMode()
+	if mode != traits.RangeSelectModeSticky {
+		// If we are in sticky range mode already, keep that; otherwise, open a non-sticky range
+		mode = traits.RangeSelectModeNonSticky
+	}
+	// Create the range from bottom to top, so that when you cancel the range,
+	// the head commit is selected
+	self.context.SetSelectionRangeAndMode(0, index-1, mode)
+	self.context.HandleFocus(types.OnFocusOpts{})
+	return nil
 }

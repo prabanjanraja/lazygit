@@ -1,11 +1,16 @@
 package controllers
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/jesseduffield/gocui"
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
 	"github.com/jesseduffield/lazygit/pkg/gui/context"
+	"github.com/jesseduffield/lazygit/pkg/gui/style"
 	"github.com/jesseduffield/lazygit/pkg/gui/types"
 	"github.com/jesseduffield/lazygit/pkg/utils"
+	"github.com/samber/lo"
 )
 
 type TagsController struct {
@@ -96,7 +101,8 @@ func (self *TagsController) GetOnRenderToMain() func() {
 				task = types.NewRenderStringTask("No tags")
 			} else {
 				cmdObj := self.c.Git().Branch.GetGraphCmdObj(tag.FullRefName())
-				task = types.NewRunCommandTask(cmdObj.GetCmd())
+				prefix := self.getTagInfo(tag) + "\n\n---\n\n"
+				task = types.NewRunCommandTaskWithPrefix(cmdObj.GetCmd(), prefix)
 			}
 
 			self.c.RenderToMainViews(types.RefreshMainOpts{
@@ -110,12 +116,41 @@ func (self *TagsController) GetOnRenderToMain() func() {
 	}
 }
 
+func (self *TagsController) getTagInfo(tag *models.Tag) string {
+	if tag.IsAnnotated {
+		info := fmt.Sprintf("%s: %s", self.c.Tr.AnnotatedTag, style.AttrBold.Sprint(style.FgYellow.Sprint(tag.Name)))
+		output, err := self.c.Git().Tag.ShowAnnotationInfo(tag.Name)
+		if err == nil {
+			info += "\n\n" + strings.TrimRight(filterOutPgpSignature(output), "\n")
+		}
+		return info
+	}
+
+	return fmt.Sprintf("%s: %s", self.c.Tr.LightweightTag, style.AttrBold.Sprint(style.FgYellow.Sprint(tag.Name)))
+}
+
+func filterOutPgpSignature(output string) string {
+	lines := strings.Split(output, "\n")
+	inPgpSignature := false
+	filteredLines := lo.Filter(lines, func(line string, _ int) bool {
+		if line == "-----END PGP SIGNATURE-----" {
+			inPgpSignature = false
+			return false
+		}
+		if line == "-----BEGIN PGP SIGNATURE-----" {
+			inPgpSignature = true
+		}
+		return !inPgpSignature
+	})
+	return strings.Join(filteredLines, "\n")
+}
+
 func (self *TagsController) checkout(tag *models.Tag) error {
 	self.c.LogAction(self.c.Tr.Actions.CheckoutTag)
 	if err := self.c.Helpers().Refs.CheckoutRef(tag.FullRefName(), types.CheckoutRefOptions{}); err != nil {
 		return err
 	}
-	self.c.Context().Push(self.c.Contexts().Branches)
+	self.c.Context().Push(self.c.Contexts().Branches, types.OnFocusOpts{})
 	return nil
 }
 
@@ -123,7 +158,7 @@ func (self *TagsController) localDelete(tag *models.Tag) error {
 	return self.c.WithWaitingStatus(self.c.Tr.DeletingStatus, func(gocui.Task) error {
 		self.c.LogAction(self.c.Tr.Actions.DeleteLocalTag)
 		err := self.c.Git().Tag.LocalDelete(tag.Name)
-		_ = self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.COMMITS, types.TAGS}})
+		self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.COMMITS, types.TAGS}})
 		return err
 	})
 }
@@ -165,7 +200,8 @@ func (self *TagsController) remoteDelete(tag *models.Tag) error {
 							return err
 						}
 						self.c.Toast(self.c.Tr.RemoteTagDeletedMessage)
-						return self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.COMMITS, types.TAGS}})
+						self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.COMMITS, types.TAGS}})
+						return nil
 					})
 				},
 			})
@@ -218,7 +254,8 @@ func (self *TagsController) localAndRemoteDelete(tag *models.Tag) error {
 						if err := self.c.Git().Tag.LocalDelete(tag.Name); err != nil {
 							return err
 						}
-						return self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.COMMITS, types.TAGS}})
+						self.c.Refresh(types.RefreshOptions{Mode: types.ASYNC, Scope: []types.RefreshableView{types.COMMITS, types.TAGS}})
+						return nil
 					})
 				},
 			})
@@ -302,7 +339,7 @@ func (self *TagsController) push(tag *models.Tag) error {
 }
 
 func (self *TagsController) createResetMenu(tag *models.Tag) error {
-	return self.c.Helpers().Refs.CreateGitResetMenu(tag.Name)
+	return self.c.Helpers().Refs.CreateGitResetMenu(tag.Name, tag.FullRefName())
 }
 
 func (self *TagsController) create() error {
